@@ -1,0 +1,90 @@
+<!doctype html>
+<html lang="es">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width,initial-scale=1">
+  <title>LifeLab - Simulador de Vida</title>
+  <style>
+    :root{font-family:Inter,system-ui,-apple-system,Segoe UI,sans-serif;color:#f6f7fb;background:#080a0f}
+    *{box-sizing:border-box}body{margin:0;min-height:100vh;background:radial-gradient(circle at 10% 0%,#1c4f40 0,transparent 32rem),radial-gradient(circle at 100% 100%,#273567 0,transparent 30rem),#080a0f}
+    main{width:min(1120px,calc(100% - 28px));margin:auto;padding:28px 0}.panel{border:1px solid #ffffff22;border-radius:28px;background:#ffffff12;box-shadow:0 24px 80px #0008;backdrop-filter:blur(16px)}
+    header{display:flex;justify-content:space-between;gap:20px;align-items:center;padding:28px;margin-bottom:18px}h1{font-size:clamp(2.5rem,7vw,5rem);line-height:.9;margin:0 0 10px;letter-spacing:-.08em}.tag{color:#8ee6c3;text-transform:uppercase;letter-spacing:.12em;font-weight:800;font-size:.78rem;margin:0 0 8px}.sub{max-width:650px;color:#aab2c0;line-height:1.6;margin:0}.clock{min-width:160px;text-align:right;border:1px solid #ffffff22;border-radius:22px;padding:18px;background:#0004}.clock b{font-size:2rem;display:block}.clock span,.clock small{color:#aab2c0}
+    .grid{display:grid;grid-template-columns:1fr 1fr;gap:18px}.card{padding:22px}.room{position:relative;min-height:320px;overflow:hidden;border-radius:24px;border:1px solid #ffffff22;background:linear-gradient(145deg,#8ee6c322,#687cff22)}.window{position:absolute;right:28px;top:28px;width:86px;height:86px;border-radius:24px;border:1px solid #ffffff33;background:#fff1}.sim{position:absolute;left:50%;top:52%;width:138px;height:178px;border-radius:70px 70px 46px 46px;background:radial-gradient(circle at 50% 27%,#f4c9aa 0 28%,transparent 29%),linear-gradient(#8ee6c3 0 52%,#287862 53%);transform:translate(-50%,-50%);display:grid;place-items:start center;padding-top:28px;box-shadow:0 30px 70px #0008;transition:.2s}.sim.low{filter:grayscale(.5);transform:translate(-50%,-45%) rotate(-2deg)}.face{font-size:2.35rem}.shadow{position:absolute;left:50%;bottom:54px;width:190px;height:26px;border-radius:999px;background:#0007;filter:blur(8px);transform:translateX(-50%)}
+    .top{display:flex;justify-content:space-between;align-items:center;gap:12px;margin-bottom:18px}h2{margin:0;letter-spacing:-.04em}.pill{border:1px solid #8ee6c355;color:#8ee6c3;background:#8ee6c31a;border-radius:999px;padding:8px 12px;font-weight:800}.stats{display:grid;grid-template-columns:repeat(3,1fr);gap:10px;margin-top:16px}.stats div,.goal,.action{border:1px solid #ffffff22;border-radius:18px;background:#0003;padding:14px}.stats span,.need span,.action p,.goal p,li{color:#aab2c0}.stats b{display:block;font-size:1.25rem;margin-top:4px}.needs{display:grid;gap:13px}.need .row{display:flex;justify-content:space-between;margin-bottom:7px}.bar{height:12px;border-radius:99px;background:#ffffff14;overflow:hidden}.fill{height:100%;width:50%;border-radius:99px;background:linear-gradient(90deg,#4fd1a5,#8ee6c3);transition:.2s}.fill.warn{background:linear-gradient(90deg,#d69f2d,#ffd166)}.fill.bad{background:linear-gradient(90deg,#ef476f,#ff8a8a)}
+    .actions{display:grid;grid-template-columns:repeat(2,1fr);gap:12px}.action{min-height:94px;color:#f6f7fb;text-align:left;cursor:pointer;font:inherit;transition:.18s}.action:hover:not(:disabled){transform:translateY(-2px);background:#ffffff1f}.action:disabled{opacity:.45;cursor:not-allowed}.action b{display:block;margin-bottom:6px}.goals{display:grid;gap:10px}.goal.done{border-color:#8ee6c366}.goal b{display:block}.log{margin-top:16px;padding-top:14px;border-top:1px solid #ffffff22}ul{padding:0;margin:0;list-style:none;display:grid;gap:8px;max-height:170px;overflow:auto}
+    .reset{border:1px solid #ffffff22;border-radius:14px;background:#ffffff12;color:#f6f7fb;padding:10px 14px;cursor:pointer}@media(max-width:850px){header,.top{align-items:flex-start;flex-direction:column}.clock{width:100%;text-align:left}.grid{grid-template-columns:1fr}.actions,.stats{grid-template-columns:1fr}}
+  </style>
+</head>
+<body>
+<main>
+  <header class="panel">
+    <div><p class="tag">Juego web · simulador social</p><h1>LifeLab</h1><p class="sub">Cuida a tu Sim: equilibra hambre, energía, diversión, social, higiene y casa. Trabaja, estudia, sube de nivel y completa metas.</p></div>
+    <div class="clock"><span id="day">Día 1</span><b id="time">08:00</b><small id="moodText">Humor estable</small></div>
+  </header>
+  <section class="grid">
+    <article class="panel card">
+      <div class="room"><div class="window"></div><div id="avatar" class="sim"><span id="face" class="face">🙂</span></div><div class="shadow"></div></div>
+      <div class="top" style="margin-top:16px"><div><p class="tag">Sim activo</p><h2>Alex</h2></div><button id="reset" class="reset">Reiniciar</button></div>
+      <div class="stats"><div><span>Dinero</span><b id="money">$120</b></div><div><span>Nivel</span><b id="level">1</b></div><div><span>XP</span><b id="xp">0/125</b></div></div>
+    </article>
+    <article class="panel card"><div class="top"><div><p class="tag">Necesidades</p><h2>Estado</h2></div><span id="badge" class="pill">Equilibrado</span></div><div id="needs" class="needs"></div></article>
+    <article class="panel card"><div class="top"><div><p class="tag">Acciones</p><h2>Qué hacer</h2></div></div><div id="actions" class="actions"></div></article>
+    <article class="panel card"><div class="top"><div><p class="tag">Progreso</p><h2>Metas y eventos</h2></div></div><div id="goals" class="goals"></div><div class="log"><h3>Bitácora</h3><ul id="log"></ul></div></article>
+  </section>
+</main>
+<script>
+const KEY="lifelab-save-v1";
+const needs=[["hunger","Hambre","🍜"],["energy","Energía","⚡"],["fun","Diversión","🎮"],["social","Social","💬"],["hygiene","Higiene","🫧"],["home","Casa","🏠"]];
+const base={day:1,hour:8,money:120,level:1,xp:0,done:[],log:["Bienvenido a LifeLab. Tu Sim está listo."],needs:{hunger:72,energy:70,fun:62,social:55,hygiene:74,home:68}};
+let s=load();
+const $=id=>document.getElementById(id);
+const actions={
+ eat:["Comer","🍲","Sube hambre. Costo $12.",1,{hunger:28,energy:-4,hygiene:-3},0,-12],
+ sleep:["Dormir","🛌","Recupera energía y avanza 7h.",7,{energy:46,hunger:-18,hygiene:-12,fun:-8,social:-8},0,0],
+ shower:["Ducharse","🚿","Mejora higiene y ánimo.",1,{hygiene:34,fun:4,energy:-3},0,0],
+ play:["Jugar","🎲","Sube diversión y consume energía.",2,{fun:32,energy:-10,hunger:-8,social:-4},6,0],
+ social:["Socializar","📱","Mejora relaciones y diversión.",2,{social:30,fun:8,energy:-8,hunger:-6},8,0],
+ study:["Estudiar","📚","Gana XP para subir de nivel.",3,{energy:-16,fun:-10,hunger:-8,social:-6},26,0],
+ work:["Trabajar","💼","Gana dinero según nivel y humor.",4,{energy:-24,fun:-18,hunger:-14,social:4,hygiene:-8,home:-5},18,()=>55+s.level*18+Math.round(mood()/5)],
+ clean:["Limpiar","🧹","Mejora la casa.",2,{home:34,energy:-12,fun:-6,hygiene:-5},10,0],
+ decorate:["Decorar","🪴","Mejora casa y diversión. Costo $45.",2,{home:18,fun:14,energy:-6},10,-45]
+};
+const goals=[
+ ["balanced","Vida equilibrada","Todas las necesidades sobre 50.",()=>Object.values(s.needs).every(v=>v>=50)],
+ ["savings","Primer ahorro","Junta $300.",()=>s.money>=300],
+ ["level3","Rutina avanzada","Alcanza nivel 3.",()=>s.level>=3],
+ ["week","Semana completa","Llega al día 7 con humor sano.",()=>s.day>=7&&mood()>=35]
+];
+const events=[
+ ["Un vecino dejó comida casera. Hambre +10.",()=>change({hunger:10})],
+ ["Encontraste una moneda olvidada. Dinero +$20.",()=>s.money+=20],
+ ["Una videollamada inesperada. Social +12, energía -4.",()=>change({social:12,energy:-4})],
+ ["Se rompió algo en casa. Casa -12.",()=>change({home:-12})]
+];
+function load(){try{return {...structuredClone(base),...JSON.parse(localStorage.getItem(KEY)||"{}")}}catch{return structuredClone(base)}}
+function save(){localStorage.setItem(KEY,JSON.stringify(s))}
+function clamp(v){return Math.max(0,Math.min(100,Math.round(v)))}
+function change(obj){for(const k in obj)s.needs[k]=clamp((s.needs[k]??0)+obj[k])}
+function mood(){return Math.round(Object.values(s.needs).reduce((a,b)=>a+b,0)/6)}
+function moodName(m){return m>=80?"Inspirado":m>=62?"Equilibrado":m>=42?"Cansado":m>=25?"En riesgo":"Crítico"}
+function getFace(m){return m>=80?"😄":m>=62?"🙂":m>=42?"😐":m>=25?"😟":"😵"}
+function fmtTime(){const h=Math.floor(s.hour),m=Math.round((s.hour-h)*60);return `${String(h).padStart(2,"0")}:${String(m).padStart(2,"0")}`}
+function log(t){s.log.unshift(`[Día ${s.day}, ${fmtTime()}] ${t}`);s.log=s.log.slice(0,8)}
+function pass(h){const d=s.day;s.hour+=h;while(s.hour>=24){s.hour-=24;s.day++}change({hunger:-2*h,energy:-1*h,fun:-1*h,social:-1*h,hygiene:-1*h,home:-.8*h});if(s.day>d){const rent=18+s.level*2;s.money=Math.max(0,s.money-rent);log(`Nuevo día. Gastos básicos: -$${rent}.`)}}
+function xp(n){s.xp+=n;while(s.xp>=90+s.level*35){s.xp-=90+s.level*35;s.level++;s.money+=35;change({fun:8,social:6});log(`Subiste a nivel ${s.level}. Bono +$35.`)}}
+function doAction(k){const a=actions[k];if(!a)return;if(k==="work"&&(s.needs.energy<18||s.needs.hygiene<18)){log("Necesitas más energía e higiene para trabajar.");return render()}if(k==="decorate"&&s.money<45){log("Necesitas $45 para decorar.");return render()}if(k==="eat"&&s.money<12){log("Necesitas $12 para comer.");return render()}const cash=typeof a[6]==="function"?a[6]():a[6];s.money+=cash;change(a[4]);xp(a[5]);pass(a[3]);if(Math.random()<.18){const e=events[Math.floor(Math.random()*events.length)];e[1]();log(e[0])}checkGoals();log(`${a[1]} ${a[0]}${cash<0?` (-$${Math.abs(cash)})`:cash>0?` (+$${cash})`:""}.`);if(mood()<=15)log("Tu Sim está al límite. Prioriza dormir, comer y ducharse.");save();render()}
+function checkGoals(){for(const g of goals)if(g[3]()&&!s.done.includes(g[0])){s.done.push(g[0]);s.money+=25;log(`Meta completada: ${g[1]}. +$25.`)}}
+function render(){
+ const m=mood();$("day").textContent=`Día ${s.day}`;$("time").textContent=fmtTime();$("moodText").textContent=`Humor ${m}%`;$("money").textContent=`$${s.money}`;$("level").textContent=s.level;$("xp").textContent=`${s.xp}/${90+s.level*35}`;$("badge").textContent=moodName(m);$("face").textContent=getFace(m);$("avatar").classList.toggle("low",m<35);
+ $("needs").innerHTML=needs.map(([k,l,i])=>`<div class="need"><div class="row"><span>${i} ${l}</span><b>${s.needs[k]}%</b></div><div class="bar"><div class="fill ${s.needs[k]<=25?"bad":s.needs[k]<=45?"warn":""}" style="width:${s.needs[k]}%"></div></div></div>`).join("");
+ $("actions").innerHTML=Object.entries(actions).map(([k,a])=>`<button class="action" data-k="${k}" ${k==="work"&&(s.needs.energy<18||s.needs.hygiene<18)||k==="decorate"&&s.money<45||k==="eat"&&s.money<12?"disabled":""}><b>${a[1]} ${a[0]}</b><p>${a[2]}</p><p>${a[3]}h · XP +${a[5]}</p></button>`).join("");
+ document.querySelectorAll(".action").forEach(b=>b.onclick=()=>doAction(b.dataset.k));
+ $("goals").innerHTML=goals.map(g=>`<div class="goal ${s.done.includes(g[0])?"done":""}"><b>${s.done.includes(g[0])?"✓":"·"} ${g[1]}</b><p>${g[2]}</p></div>`).join("");
+ $("log").innerHTML=s.log.map(x=>`<li>${x}</li>`).join("");
+}
+$("reset").onclick=()=>{s=structuredClone(base);save();render()};
+setInterval(()=>{pass(.25);checkGoals();save();render()},3500);
+render();
+</script>
+</body>
+</html>
