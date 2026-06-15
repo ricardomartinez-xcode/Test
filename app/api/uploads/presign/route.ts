@@ -5,7 +5,20 @@ import { createUploadUrl, hasR2Config } from "@/lib/server/r2";
 const uploadSchema = z.object({
   fileName: z.string().min(1),
   contentType: z.string().min(1),
+  root: z.string().min(1).optional(),
+  sectionPath: z.string().min(1).optional(),
 });
+
+function safeSegment(value: string) {
+  return value
+    .trim()
+    .replace(/\\/g, "/")
+    .replace(/\+/g, "/")
+    .split("/")
+    .map((part) => part.trim())
+    .filter(Boolean)
+    .join("/");
+}
 
 function safeFileName(value: string) {
   return value
@@ -25,7 +38,10 @@ export async function POST(request: Request) {
   }
 
   const payload = uploadSchema.parse(await request.json());
-  const key = `materials/${new Date().getFullYear()}/${crypto.randomUUID()}-${safeFileName(payload.fileName)}`;
+  const root = safeSegment(payload.root ?? "Psicologia");
+  const sectionPath = safeSegment(payload.sectionPath ?? "Materiales de clase");
+  const prefix = sectionPath.startsWith(`${root}/`) ? sectionPath : `${root}/${sectionPath}`;
+  const key = `${prefix}/${new Date().getFullYear()}/${crypto.randomUUID()}-${safeFileName(payload.fileName)}`;
   const result = await createUploadUrl({ key, contentType: payload.contentType });
   return NextResponse.json(result);
 }
