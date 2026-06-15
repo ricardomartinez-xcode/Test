@@ -43,7 +43,7 @@ export function AuthGate({ children }: AuthGateProps) {
     setError(null);
 
     if (!supabase) {
-      setError("Supabase Auth no está configurado en producción.");
+      setError("No se pudo iniciar sesión. Revisa la configuración de autenticación.");
       return;
     }
 
@@ -77,19 +77,10 @@ export function AuthGate({ children }: AuthGateProps) {
   if (!session) {
     return (
       <main className="loginScreen authPage">
-        <section className="loginCard authCard">
-          <div className="authBrand">
-            <img src="/icon.svg" className="loginLogo" alt="PSCV" />
-            <div>
-              <p className="eyebrow">PSCV Room 2.0</p>
-              <strong>Acceso seguro</strong>
-            </div>
-          </div>
+        <section className="loginCard authCard authCardSimple">
+          <img src="/icon.svg" className="authLogoMain" alt="PSCV Room" />
 
-          <h1>Inicia sesión con Microsoft</h1>
-          <p className="muted">
-            Usa tu cuenta institucional o autorizada. Tu rol se asigna automáticamente desde Supabase.
-          </p>
+          <h1 className="authTitle">PSCV Room</h1>
 
           <button className="microsoftButton" onClick={signInWithMicrosoft} type="button" disabled={!supabase || busy}>
             <span className="microsoftMark" aria-hidden="true">
@@ -101,18 +92,7 @@ export function AuthGate({ children }: AuthGateProps) {
             {busy ? "Redirigiendo..." : "Continuar con Microsoft"}
           </button>
 
-          {!supabase ? (
-            <p className="authError">
-              Supabase Auth no está configurado. Revisa NEXT_PUBLIC_SUPABASE_URL y NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY.
-            </p>
-          ) : null}
           {error ? <p className="authError">{error}</p> : null}
-
-          <div className="loginMeta">
-            <span>Microsoft OAuth</span>
-            <span>Supabase Auth</span>
-            <span>Roles por correo</span>
-          </div>
         </section>
       </main>
     );
