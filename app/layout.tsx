@@ -7,13 +7,19 @@ import "./evolution.css";
 export const metadata: Metadata = {
   title: "PSCV Room 2.0",
   description: "Panel moderno de tareas, materiales y calendario para psicología.",
+  icons: {
+    icon: [{ url: "/icon.svg", type: "image/svg+xml" }],
+    shortcut: ["/icon.svg"],
+    apple: [{ url: "/icon.svg", type: "image/svg+xml" }],
+  },
+  manifest: "/site.webmanifest",
 };
 
 export const viewport: Viewport = {
   width: "device-width",
   initialScale: 1,
   viewportFit: "cover",
-  themeColor: "#4285dc",
+  themeColor: "#208dac",
 };
 
 export default function RootLayout({ children }: Readonly<{ children: React.ReactNode }>) {
