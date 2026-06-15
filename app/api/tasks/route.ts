@@ -64,7 +64,7 @@ export async function GET() {
         platformUrl: row.platform_url ?? "",
         calendarEventId: row.calendar_event_id ?? "",
         lastSync: row.last_sync_at ? new Date(row.last_sync_at).toISOString() : "",
-        visibleToReaders: deriveReaderVisibility({ status, daysRemaining }),
+        visibleToReaders: deriveReaderVisibility({ status }),
       };
     }),
   });
