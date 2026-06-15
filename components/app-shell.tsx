@@ -1,12 +1,13 @@
 "use client";
 
-import { signIn, signOut, useSession } from "next-auth/react";
 import { useEffect, useMemo, useState } from "react";
 import type { ConfigColumn, DeliveryType, GroupMember, Material, NewTaskInput, Role, Task, TaskStatus } from "@/lib/domain";
 import { courses, deliveryTypes, statuses } from "@/lib/domain";
+import { createSupabaseBrowserClient, hasSupabaseBrowserConfig } from "@/lib/supabase/client";
 import { calculateDaysRemaining, calendarTone, createId, deliveryTone, deriveReaderVisibility, deriveStatus, formatDate, shortText, sortTasks } from "@/lib/task-utils";
 
 type Tab = "calendar" | "tasks" | "materials" | "completed" | "group" | "config";
+type AuthStatus = "loading" | "ready";
 
 type Props = {
   initialTasks: Task[];
@@ -16,13 +17,21 @@ type Props = {
 };
 
 const storageKey = "pscv-room-2.tasks";
-const adminEmails = [
+const defaultAdminEmails = [
   "martinez_28699@univdep.edu.mx",
   "ricardomartinez19b@gmail.com",
   "ricardomartinez19b@icloud.com",
   "montsedv2611@gmail.com",
   "ortega_28607@univdep.edu.mx",
 ];
+
+function getAdminEmails() {
+  const fromEnv = (process.env.NEXT_PUBLIC_ADMIN_EMAILS || "")
+    .split(",")
+    .map((email) => email.trim().toLowerCase())
+    .filter(Boolean);
+  return new Set([...defaultAdminEmails, ...fromEnv].map((email) => email.toLowerCase()));
+}
 
 const blankTask: NewTaskInput = {
   course: courses[0],
@@ -38,10 +47,14 @@ const blankTask: NewTaskInput = {
 };
 
 export function AppShell({ initialTasks, initialMaterials, initialMembers, initialConfigColumns }: Props) {
-  const { data: session, status: authStatus } = useSession();
+  const supabase = useMemo(() => createSupabaseBrowserClient(), []);
+  const [authStatus, setAuthStatus] = useState<AuthStatus>(hasSupabaseBrowserConfig() ? "loading" : "ready");
+  const [sessionEmail, setSessionEmail] = useState<string | null>(null);
   const [demoEmail, setDemoEmail] = useState<string | null>(null);
-  const email = session?.user?.email ?? demoEmail;
-  const role: Role = email && adminEmails.includes(email.toLowerCase()) ? "admin" : "reader";
+  const [authError, setAuthError] = useState<string | null>(null);
+
+  const email = sessionEmail ?? demoEmail;
+  const role: Role = email && getAdminEmails().has(email.toLowerCase()) ? "admin" : "reader";
 
   const [tab, setTab] = useState<Tab>("calendar");
   const [drawerOpen, setDrawerOpen] = useState(false);
@@ -50,6 +63,31 @@ export function AppShell({ initialTasks, initialMaterials, initialMembers, initi
   const [tasks, setTasks] = useState<Task[]>(initialTasks);
   const [draft, setDraft] = useState<NewTaskInput>(blankTask);
   const [monthCursor, setMonthCursor] = useState(new Date(2026, 5, 15));
+
+  useEffect(() => {
+    if (!supabase) {
+      setAuthStatus("ready");
+      return;
+    }
+
+    let mounted = true;
+    supabase.auth.getSession().then(({ data, error }) => {
+      if (!mounted) return;
+      if (error) setAuthError(error.message);
+      setSessionEmail(data.session?.user.email ?? null);
+      setAuthStatus("ready");
+    });
+
+    const { data } = supabase.auth.onAuthStateChange((_event, session) => {
+      setSessionEmail(session?.user.email ?? null);
+      setAuthStatus("ready");
+    });
+
+    return () => {
+      mounted = false;
+      data.subscription.unsubscribe();
+    };
+  }, [supabase]);
 
   useEffect(() => {
     const stored = window.localStorage.getItem(storageKey);
@@ -66,8 +104,33 @@ export function AppShell({ initialTasks, initialMaterials, initialMembers, initi
     window.localStorage.setItem(storageKey, JSON.stringify(tasks));
   }, [tasks]);
 
+  async function signInWithMicrosoft() {
+    setAuthError(null);
+    if (!supabase) {
+      setAuthError("Supabase todavía no está configurado. Usa modo demo o agrega NEXT_PUBLIC_SUPABASE_URL y NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY.");
+      return;
+    }
+
+    const redirectTo = `${window.location.origin}/auth/callback`;
+    const { error } = await supabase.auth.signInWithOAuth({
+      provider: "azure",
+      options: {
+        redirectTo,
+        scopes: "openid email profile",
+      },
+    });
+
+    if (error) setAuthError(error.message);
+  }
+
+  async function handleSignOut() {
+    setDemoEmail(null);
+    setSessionEmail(null);
+    if (supabase) await supabase.auth.signOut();
+  }
+
   if (authStatus === "loading") return <LoadingScreen />;
-  if (!email) return <LoginScreen onDemo={setDemoEmail} />;
+  if (!email) return <LoginScreen onDemo={setDemoEmail} onMicrosoft={signInWithMicrosoft} authEnabled={Boolean(supabase)} authError={authError} />;
 
   const normalizedTasks = tasks.map((task) => {
     const daysRemaining = calculateDaysRemaining(task.dueDate);
@@ -159,10 +222,7 @@ export function AppShell({ initialTasks, initialMaterials, initialMembers, initi
         active={tab}
         onClose={() => setDrawerOpen(false)}
         onSelect={selectTab}
-        onSignOut={() => {
-          setDemoEmail(null);
-          void signOut({ callbackUrl: "/" });
-        }}
+        onSignOut={handleSignOut}
       />
 
       <section className="screen">
@@ -196,15 +256,16 @@ export function AppShell({ initialTasks, initialMaterials, initialMembers, initi
   );
 }
 
-function LoginScreen({ onDemo }: { onDemo: (email: string) => void }) {
+function LoginScreen({ onDemo, onMicrosoft, authEnabled, authError }: { onDemo: (email: string) => void; onMicrosoft: () => void; authEnabled: boolean; authError: string | null }) {
   return (
     <main className="loginScreen">
       <div className="loginCard">
         <img src="/icon.svg" alt="PSCV" className="loginLogo" />
         <p className="eyebrow">PSCV Room 2.0</p>
-        <h1>Accede con Google para asignar tu rol automáticamente.</h1>
-        <p className="muted">La UI usa el correo OAuth para resolver permisos: alumno o admin. Mientras configuramos Google OAuth puedes entrar en modo demo.</p>
-        <button className="primaryAction" type="button" onClick={() => void signIn("google")}>Continuar con Google</button>
+        <h1>Accede con Microsoft para asignar tu rol automáticamente.</h1>
+        <p className="muted">La app usa Supabase Auth con Microsoft/Azure OAuth. El correo autenticado define si entras como alumno o admin.</p>
+        <button className="primaryAction" type="button" onClick={onMicrosoft}>{authEnabled ? "Continuar con Microsoft" : "Microsoft OAuth pendiente"}</button>
+        {authError ? <p className="authError">{authError}</p> : null}
         <div className="demoGrid">
           <button type="button" onClick={() => onDemo("alumno@univdep.edu.mx")}>Demo alumno</button>
           <button type="button" onClick={() => onDemo("martinez_28699@univdep.edu.mx")}>Demo admin</button>
