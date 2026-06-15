@@ -2,6 +2,7 @@ import type { Metadata, Viewport } from "next";
 import { Providers } from "@/components/providers";
 import "./globals.css";
 import "./responsive.css";
+import "./evolution.css";
 
 export const metadata: Metadata = {
   title: "PSCV Room 2.0",
