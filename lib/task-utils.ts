@@ -1,4 +1,4 @@
-import type { Task, TaskStatus } from "./domain";
+import type { DeliveryType, Task, TaskStatus } from "./domain";
 
 export function dateToLocalMidnight(value: string) {
   const [year, month, day] = value.split("-").map(Number);
@@ -11,23 +11,13 @@ export function calculateDaysRemaining(dueDate: string, today = new Date()) {
   return Math.ceil((due.getTime() - current.getTime()) / 86_400_000);
 }
 
-export function deriveReaderVisibility(task: Pick<Task, "status" | "daysRemaining">) {
-  if (task.status === "Entregado" || task.status === "Cancelado") return false;
-  return task.daysRemaining >= 0;
+export function deriveReaderVisibility(task: Pick<Task, "status">) {
+  return task.status !== "Entregado" && task.status !== "Cancelado";
 }
 
 export function deriveStatus(status: TaskStatus, daysRemaining: number): TaskStatus {
   if (status === "Pendiente" && daysRemaining === 0) return "Se entrega hoy";
   return status;
-}
-
-export function statusTone(status: TaskStatus, daysRemaining: number) {
-  if (status === "Entregado") return "ok";
-  if (status === "Cancelado") return "danger";
-  if (daysRemaining < 0) return "danger";
-  if (status === "Se entrega hoy" || daysRemaining === 0) return "warn";
-  if (status === "En proceso" || status === "Reprogramado") return "blue";
-  return "";
 }
 
 export function sortTasks(tasks: Task[]) {
@@ -43,4 +33,36 @@ export function createId(prefix = "task") {
     return `${prefix}_${crypto.randomUUID().slice(0, 8)}`;
   }
   return `${prefix}_${Math.random().toString(16).slice(2, 10)}`;
+}
+
+export function deliveryTone(type: DeliveryType) {
+  const map: Record<DeliveryType, string> = {
+    Tarea: "blue",
+    Lectura: "blue",
+    Examen: "red",
+    Exposición: "teal",
+    Proyecto: "purple",
+    Material: "gray",
+    Recordatorio: "gray",
+    Práctica: "teal",
+  };
+  return map[type];
+}
+
+export function calendarTone(task: Pick<Task, "deliveryType" | "status">) {
+  if (task.status === "Entregado") return "green";
+  if (task.deliveryType === "Examen") return "gold";
+  if (task.deliveryType === "Proyecto") return "teal";
+  if (task.deliveryType === "Exposición") return "teal";
+  return "red";
+}
+
+export function formatDate(value: string) {
+  return new Intl.DateTimeFormat("es-MX", { day: "numeric", month: "numeric", year: "numeric" }).format(
+    new Date(`${value}T12:00:00`),
+  );
+}
+
+export function shortText(value: string, max = 22) {
+  return value.length > max ? `${value.slice(0, max - 1)}…` : value;
 }

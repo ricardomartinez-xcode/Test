@@ -48,6 +48,23 @@ export type Material = {
   updatedAt?: string;
 };
 
+export type GroupMember = {
+  controlNumber: string;
+  email: string;
+  fullName: string;
+  attended: boolean;
+  licenseIssue: boolean;
+  authIssue: boolean;
+};
+
+export type ConfigColumn = {
+  key: string;
+  name: string;
+  active: boolean;
+  checkboxes: boolean;
+  fixed: boolean;
+};
+
 export type NewTaskInput = Pick<
   Task,
   "course" | "dueDate" | "dueTime" | "title" | "deliveryType" | "status"
