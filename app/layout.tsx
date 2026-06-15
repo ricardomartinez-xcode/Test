@@ -1,0 +1,15 @@
+import type { Metadata } from "next";
+import "./globals.css";
+
+export const metadata: Metadata = {
+  title: "PSCV Room 2.0",
+  description: "Panel moderno de tareas, materiales y calendario para psicología.",
+};
+
+export default function RootLayout({ children }: Readonly<{ children: React.ReactNode }>) {
+  return (
+    <html lang="es">
+      <body>{children}</body>
+    </html>
+  );
+}

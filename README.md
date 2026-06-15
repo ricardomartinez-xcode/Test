@@ -1,0 +1,100 @@
+# PSCV Room 2.0
+
+App web moderna para reemplazar y mejorar el flujo actual de AppSheet + Google Sheets.
+
+## Objetivo
+
+Convertir el sistema actual de tareas, materiales, calendario y seguimiento en una app propia con:
+
+- Panel de lectura para alumnos.
+- Panel admin para crear, editar, entregar y cancelar tareas.
+- Modelo preparado para Postgres.
+- Subida/descarga de archivos preparada para Cloudflare R2.
+- Migración gradual desde Google Sheets.
+- Auditoría, permisos y columnas internas separadas de la UI.
+
+## Decisión de arquitectura
+
+La recomendación para producción es:
+
+```txt
+Next.js / Vercel
+  ↓
+Postgres: tareas, usuarios, materias, estados, auditoría
+  ↓
+Cloudflare R2: archivos pesados, PDFs, presentaciones, materiales
+  ↓
+Google Sheets: solo importación inicial, respaldo o reportes simples
+```
+
+Sheets funcionó bien para prototipo, pero no debe ser la fuente principal cuando necesitas permisos reales, auditoría, estados consistentes, carga de archivos y escalabilidad.
+
+## Stack
+
+- Next.js App Router
+- React + TypeScript
+- CSS nativo minimalista
+- API routes listas para Postgres y R2
+- Modo demo con datos semilla si no hay base de datos
+
+## Ejecutar localmente
+
+```bash
+npm install
+npm run dev
+```
+
+Abre:
+
+```txt
+http://localhost:3000
+```
+
+## Variables de entorno
+
+Copia `.env.example` a `.env.local`.
+
+```bash
+cp .env.example .env.local
+```
+
+Para demo no necesitas variables.
+
+Para producción:
+
+```env
+DATABASE_URL="postgres://..."
+CLOUDFLARE_R2_ENDPOINT="https://<account-id>.r2.cloudflarestorage.com"
+CLOUDFLARE_R2_ACCESS_KEY_ID="..."
+CLOUDFLARE_R2_SECRET_ACCESS_KEY="..."
+CLOUDFLARE_R2_BUCKET="pscv-room"
+CLOUDFLARE_R2_PUBLIC_BASE_URL="https://cdn.tu-dominio.com"
+```
+
+## Scripts
+
+```bash
+npm run dev
+npm run build
+npm run start
+npm run typecheck
+```
+
+## Carpetas importantes
+
+```txt
+app/                  UI y API routes
+components/           Componentes de interfaz
+lib/                  Tipos, seed y utilidades
+db/schema.sql         Esquema SQL recomendado
+docs/                 Arquitectura y migración
+```
+
+## Siguiente paso recomendado
+
+1. Crear base Postgres.
+2. Ejecutar `db/schema.sql`.
+3. Exportar hojas `Tareas`, `Materiales`, `Usuarios`, `Catalogos` desde Sheets.
+4. Importar a Postgres.
+5. Configurar R2 para archivos nuevos.
+6. Dejar Sheets solo como respaldo/reporting.
