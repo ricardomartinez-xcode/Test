@@ -30,9 +30,13 @@ export async function GET(request: Request, context: RouteContext) {
   if (!data.r2_key) return NextResponse.json({ error: "Este material no tiene asset R2 asociado." }, { status: 404 });
 
   const publicUrl = createPublicR2Url(data.r2_key);
+
+  // When a Cloudflare R2 custom domain is configured, prefer it over presigned S3 URLs.
+  // This keeps browser previews stable and avoids exposing the S3-compatible endpoint.
+  if (publicUrl) return NextResponse.redirect(publicUrl, { status: 302 });
+
   if (!hasR2Config()) {
-    if (publicUrl) return NextResponse.redirect(publicUrl, { status: 302 });
-    return NextResponse.json({ error: "R2 no está configurado para lectura." }, { status: 501 });
+    return NextResponse.json({ error: "R2 no está configurado para lectura y no hay dominio público configurado." }, { status: 501 });
   }
 
   try {
@@ -45,7 +49,6 @@ export async function GET(request: Request, context: RouteContext) {
 
     return NextResponse.redirect(signedUrl, { status: 302 });
   } catch (signError) {
-    if (publicUrl) return NextResponse.redirect(publicUrl, { status: 302 });
     return NextResponse.json(
       { error: signError instanceof Error ? signError.message : "No se pudo firmar el documento R2." },
       { status: 500 },
