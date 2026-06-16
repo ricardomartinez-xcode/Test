@@ -1215,3 +1215,136 @@ a svg {
     font-size: 19px;
   }
 }
+
+.workbenchOverview {
+  display: grid;
+  grid-template-columns: repeat(4, minmax(96px, 140px)) minmax(0, 1fr);
+  gap: 8px;
+  padding: 10px 10px 0;
+  background: #f5f7fb;
+}
+
+.workbenchOverview.compact {
+  padding-bottom: 0;
+}
+
+.overviewMetric,
+.overviewNext {
+  min-width: 0;
+  min-height: 54px;
+  border: 1px solid #d8e0ea;
+  border-radius: 8px;
+  background: #fff;
+  color: #111827;
+}
+
+.overviewMetric {
+  display: grid;
+  grid-template-columns: 22px minmax(0, 1fr);
+  grid-template-rows: 1fr 1fr;
+  align-items: center;
+  column-gap: 7px;
+  padding: 8px 10px;
+  text-align: left;
+  cursor: pointer;
+}
+
+.overviewMetric svg {
+  grid-row: 1 / 3;
+  color: #1f4f86;
+}
+
+.overviewMetric span,
+.overviewNext span,
+.overviewNext small {
+  min-width: 0;
+  color: #667085;
+  font-size: 11px;
+  font-weight: 800;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.overviewMetric strong {
+  font-size: 20px;
+  line-height: 1;
+}
+
+.overviewNext {
+  display: grid;
+  align-content: center;
+  gap: 2px;
+  padding: 8px 12px;
+}
+
+.overviewNext strong {
+  min-width: 0;
+  color: #111827;
+  font-size: 14px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.groupTableWrap {
+  max-width: 100%;
+  overflow: auto;
+  background: #fff;
+}
+
+.memberTable th,
+.memberTable td {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.memberTable .booleanHeader,
+.memberTable .booleanCell {
+  overflow: visible;
+}
+
+.headerSpacer {
+  width: 28px;
+  height: 28px;
+}
+
+@media (max-width: 980px) {
+  .workbenchOverview {
+    grid-template-columns: repeat(4, minmax(0, 1fr));
+  }
+
+  .overviewNext {
+    grid-column: 1 / -1;
+  }
+}
+
+@media (max-width: 620px) {
+  .workbenchOverview {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+    gap: 6px;
+    padding: 8px 8px 0;
+  }
+
+  .overviewMetric,
+  .overviewNext {
+    min-height: 48px;
+  }
+
+  .overviewMetric {
+    padding: 7px 8px;
+  }
+
+  .overviewMetric strong {
+    font-size: 17px;
+  }
+
+  .groupToolbar label {
+    flex-wrap: wrap;
+  }
+
+  .groupToolbar input {
+    flex: 1 1 180px;
+  }
+}

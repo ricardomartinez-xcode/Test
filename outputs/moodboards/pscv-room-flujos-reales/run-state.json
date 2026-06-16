@@ -1,0 +1,8 @@
+{
+  "itemCount": 12,
+  "status": "complete",
+  "reason": "Codex exec image generation was blocked by Windows WinError 5.",
+  "updatedAt": "2026-06-16T11:07:47.2504767-06:00",
+  "totalItemCount": 12,
+  "imageMode": "materialized-local-raster-fallback"
+}

@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useMemo, useState, type CSSProperties } from "react";
+import { useCallback, useEffect, useMemo, useState, type CSSProperties } from "react";
 import {
   ArrowLeft,
   CalendarDays,
@@ -40,6 +40,10 @@ type DetailOrigin = Exclude<Tab, "taskDetail">;
 type Props = {
   initialTasks: Task[];
   initialMembers: GroupMember[];
+};
+
+type UiGroupMember = GroupMember & {
+  profileId?: string;
 };
 
 type UserPreferences = {
@@ -85,19 +89,29 @@ type SectionConfig = {
   active: boolean;
 };
 
-type CustomGroupColumn = {
-  id: string;
-  label: string;
-};
-
 type BooleanGroupColumn = {
   id: string;
   label: string;
   source?: "attended" | "licenseIssue" | "authIssue";
   fixed?: boolean;
+  sortOrder?: number;
 };
 
 type GroupValueStore = Record<string, Record<string, boolean>>;
+
+type GroupColumnRow = {
+  id: string;
+  source_key: "attended" | "licenseIssue" | "authIssue" | null;
+  label: string;
+  fixed: boolean;
+  sort_order: number;
+};
+
+type GroupValueRow = {
+  profile_id: string;
+  column_id: string;
+  value: boolean;
+};
 
 const fallbackPrefs: UserPreferences = {
   calendarView: "month",
@@ -152,6 +166,7 @@ export function AppShellV5({ initialTasks, initialMembers }: Props) {
   const [tasks, setTasks] = useState<UiTask[]>(initialTasks);
   const [courses, setCourses] = useState<CourseConfig[]>(hasSupabaseConfig ? [] : demoCourses);
   const [sections, setSections] = useState<SectionConfig[]>(hasSupabaseConfig ? [] : demoSections);
+  const [members, setMembers] = useState<UiGroupMember[]>(initialMembers);
   const [cursor, setCursor] = useState(new Date());
   const [selectedTaskId, setSelectedTaskId] = useState<string | null>(initialTasks[0]?.id ?? null);
   const [detailOrigin, setDetailOrigin] = useState<DetailOrigin>("calendar");
@@ -191,7 +206,7 @@ export function AppShellV5({ initialTasks, initialMembers }: Props) {
   async function loadData(client: SupabaseBrowser, accountEmail: string) {
     setError(null);
     const normalized = accountEmail.toLowerCase();
-    const [profileRes, coursesRes, sectionsRes, tasksRes] = await Promise.all([
+    const [profileRes, coursesRes, sectionsRes, tasksRes, membersRes] = await Promise.all([
       client.from("app_profiles").select("*").eq("email", normalized).maybeSingle(),
       client.from("courses").select("*").order("sort_order"),
       client.from("material_sections").select("*").order("sort_order"),
@@ -201,6 +216,12 @@ export function AppShellV5({ initialTasks, initialMembers }: Props) {
         .is("archived_at", null)
         .order("due_date")
         .order("due_time"),
+      client
+        .from("app_profiles")
+        .select("id,control_number,email,full_name")
+        .eq("role", "student")
+        .eq("active", true)
+        .order("full_name"),
     ]);
 
     const failure = profileRes.error || coursesRes.error || sectionsRes.error || tasksRes.error;
@@ -213,6 +234,9 @@ export function AppShellV5({ initialTasks, initialMembers }: Props) {
     setCourses((coursesRes.data ?? []).map(toCourse));
     setSections((sectionsRes.data ?? []).map(toSection));
     setTasks((tasksRes.data ?? []).map(toTask));
+    if (!membersRes.error && membersRes.data?.length) {
+      setMembers(membersRes.data.map(toGroupMember));
+    }
   }
 
   async function signOut() {
@@ -227,6 +251,7 @@ export function AppShellV5({ initialTasks, initialMembers }: Props) {
     setProfile(demoProfile);
     setCourses(demoCourses);
     setSections(demoSections);
+    setMembers(initialMembers);
     setTab("calendar");
   }
 
@@ -329,11 +354,21 @@ export function AppShellV5({ initialTasks, initialMembers }: Props) {
       {error ? <div className="systemBanner">{error}</div> : null}
 
       <section className="screen">
-        {tab === "calendar" ? <Calendar tasks={visibleTasks} cursor={cursor} setCursor={setCursor} selectedTask={calendarSelectedTask} onSelect={(id) => openTaskDetail(id, "calendar")} /> : null}
-        {tab === "tasks" ? <TaskList tasks={shownTasks} role={role} selectedTask={listSelectedTask} density={prefs.taskDensity} onSelect={(id) => openTaskDetail(id, "tasks")} onDone={(id) => void markDone(id)} /> : null}
+        {tab === "calendar" ? (
+          <>
+            <WorkspaceOverview tasks={visibleTasks} completedCount={completedTasks.length} membersCount={members.length} role={role} onGo={go} />
+            <Calendar tasks={visibleTasks} cursor={cursor} setCursor={setCursor} selectedTask={calendarSelectedTask} onSelect={(id) => openTaskDetail(id, "calendar")} />
+          </>
+        ) : null}
+        {tab === "tasks" ? (
+          <>
+            <WorkspaceOverview tasks={visibleTasks} completedCount={completedTasks.length} membersCount={members.length} role={role} onGo={go} compact />
+            <TaskList tasks={shownTasks} role={role} selectedTask={listSelectedTask} density={prefs.taskDensity} onSelect={(id) => openTaskDetail(id, "tasks")} onDone={(id) => void markDone(id)} />
+          </>
+        ) : null}
         {tab === "materials" ? <MaterialLibrary previewSize={prefs.materialPreviewSize} globalQuery={query} /> : null}
         {tab === "completed" ? <TaskList tasks={completedTasks} role="reader" selectedTask={null} density={prefs.taskDensity} onSelect={(id) => openTaskDetail(id, "completed")} onDone={() => undefined} completedOnly /> : null}
-        {tab === "group" ? <Group members={initialMembers} /> : null}
+        {tab === "group" ? <Group members={members} supabase={supabase} role={role} profile={profile} onError={setError} /> : null}
         {tab === "prefs" ? <Preferences profile={profile} supabase={supabase} onProfile={setProfile} onError={setError} /> : null}
         {tab === "taskDetail" ? <TaskDetailScreen task={selectedTask} role={role} onBack={() => go(detailOrigin)} onDone={(id) => void markDone(id)} /> : null}
         {tab === "admin" ? (
@@ -397,6 +432,47 @@ function Drawer({ open, email, role, active, sourceLabel, onClose, onSelect, onS
 
 function DrawerItem({ icon, label, active, onClick }: { icon: React.ReactNode; label: string; active: boolean; onClick: () => void }) {
   return <button className={`drawerItem ${active ? "active" : ""}`} onClick={onClick} type="button"><span>{icon}</span>{label}</button>;
+}
+
+function WorkspaceOverview({ tasks, completedCount, membersCount, role, onGo, compact = false }: { tasks: UiTask[]; completedCount: number; membersCount: number; role: Role; onGo: (tab: Tab) => void; compact?: boolean }) {
+  const today = new Date().toISOString().slice(0, 10);
+  const dueToday = tasks.filter((task) => task.dueDate === today).length;
+  const overdue = tasks.filter((task) => task.daysRemaining < 0).length;
+  const nextTask = tasks.find((task) => task.daysRemaining >= 0) ?? tasks[0] ?? null;
+
+  return (
+    <section className={`workbenchOverview ${compact ? "compact" : ""}`}>
+      <button className="overviewMetric" onClick={() => onGo("tasks")} type="button">
+        <ListTodo size={18} />
+        <span>Activas</span>
+        <strong>{tasks.length}</strong>
+      </button>
+      <button className="overviewMetric" onClick={() => onGo("calendar")} type="button">
+        <CalendarClock size={18} />
+        <span>Hoy</span>
+        <strong>{dueToday}</strong>
+      </button>
+      {role === "admin" ? (
+        <button className="overviewMetric" onClick={() => onGo("completed")} type="button">
+          <CheckCircle2 size={18} />
+          <span>Entregadas</span>
+          <strong>{completedCount}</strong>
+        </button>
+      ) : null}
+      {role === "admin" ? (
+        <button className="overviewMetric" onClick={() => onGo("group")} type="button">
+          <Users size={18} />
+          <span>Alumnos</span>
+          <strong>{membersCount}</strong>
+        </button>
+      ) : null}
+      <div className="overviewNext">
+        <span>{overdue > 0 ? `${overdue} vencidas` : "Siguiente actividad"}</span>
+        <strong>{nextTask ? nextTask.title : "Sin actividades activas"}</strong>
+        {nextTask ? <small>{formatTaskDateTime(nextTask.dueDate, nextTask.dueTime)}</small> : null}
+      </div>
+    </section>
+  );
 }
 
 function Calendar({ tasks, cursor, setCursor, selectedTask, onSelect }: { tasks: UiTask[]; cursor: Date; setCursor: (date: Date) => void; selectedTask: UiTask | null; onSelect: (id: string) => void }) {
@@ -557,59 +633,134 @@ function TaskList({
   );
 }
 
-function Group({ members }: { members: GroupMember[] }) {
-  const [customColumns, setCustomColumns] = useState<CustomGroupColumn[]>([]);
+function Group({ members, supabase, role, profile, onError }: { members: UiGroupMember[]; supabase: SupabaseBrowser | null; role: Role; profile: Profile | null; onError: (error: string | null) => void }) {
+  const [columns, setColumns] = useState<BooleanGroupColumn[]>(fixedBooleanColumns);
   const [values, setValues] = useState<GroupValueStore>({});
   const [newColumnLabel, setNewColumnLabel] = useState("");
   const [editingColumnId, setEditingColumnId] = useState<string | null>(null);
   const [editingLabel, setEditingLabel] = useState("");
   const [storageReady, setStorageReady] = useState(false);
-  const booleanColumns: BooleanGroupColumn[] = [...fixedBooleanColumns, ...customColumns.map((column) => ({ id: column.id, label: column.label }))];
+  const [usingRemote, setUsingRemote] = useState(false);
 
-  useEffect(() => {
+  const loadGroupConfig = useCallback(async () => {
+    if (supabase && role === "admin") {
+      const [columnRes, valueRes] = await Promise.all([
+        supabase
+          .from("group_columns")
+          .select("id,source_key,label,fixed,sort_order")
+          .eq("active", true)
+          .order("sort_order"),
+        supabase
+          .from("group_column_values")
+          .select("profile_id,column_id,value"),
+      ]);
+
+      if (!columnRes.error && !valueRes.error) {
+        const remoteColumns = (columnRes.data ?? []).map((row) => toGroupColumn(row as GroupColumnRow));
+        setColumns(remoteColumns.length ? remoteColumns : fixedBooleanColumns);
+        setValues(toGroupValueStore((valueRes.data ?? []) as GroupValueRow[]));
+        setUsingRemote(true);
+        setStorageReady(true);
+        return;
+      }
+
+      onError(columnRes.error?.message ?? valueRes.error?.message ?? null);
+    }
+
     try {
       const raw = window.localStorage.getItem("pscv-group-columns-v2");
       if (raw) {
-        const parsed = JSON.parse(raw) as { columns?: CustomGroupColumn[]; values?: GroupValueStore };
-        setCustomColumns(Array.isArray(parsed.columns) ? parsed.columns.filter((column) => column.id && column.label) : []);
+        const parsed = JSON.parse(raw) as { columns?: BooleanGroupColumn[]; values?: GroupValueStore };
+        const storedColumns = Array.isArray(parsed.columns) ? parsed.columns.filter((column) => column.id && column.label && !column.fixed) : [];
+        setColumns([...fixedBooleanColumns, ...storedColumns]);
         setValues(parsed.values && typeof parsed.values === "object" ? parsed.values : {});
+      } else {
+        setColumns(fixedBooleanColumns);
+        setValues({});
       }
     } catch {
-      setCustomColumns([]);
+      setColumns(fixedBooleanColumns);
       setValues({});
     } finally {
+      setUsingRemote(false);
       setStorageReady(true);
     }
-  }, []);
+  }, [onError, role, supabase]);
 
   useEffect(() => {
-    if (!storageReady) return;
-    window.localStorage.setItem("pscv-group-columns-v2", JSON.stringify({ columns: customColumns, values }));
-  }, [customColumns, values, storageReady]);
+    void loadGroupConfig();
+  }, [loadGroupConfig]);
 
-  function addColumn() {
+  useEffect(() => {
+    if (!storageReady || usingRemote) return;
+    window.localStorage.setItem("pscv-group-columns-v2", JSON.stringify({ columns: columns.filter((column) => !column.fixed), values }));
+  }, [columns, values, storageReady, usingRemote]);
+
+  async function addColumn() {
     const label = newColumnLabel.trim();
     if (!label) return;
-    setCustomColumns((columns) => [...columns, { id: `custom-${Date.now()}`, label }]);
+    const sortOrder = Math.max(0, ...columns.map((column) => column.sortOrder ?? 0)) + 10;
+
+    if (usingRemote && supabase) {
+      const { data, error } = await supabase
+        .from("group_columns")
+        .insert({ label, sort_order: sortOrder, created_by: profile?.id ?? null })
+        .select("id,source_key,label,fixed,sort_order")
+        .single();
+      if (error) {
+        onError(error.message);
+        return;
+      }
+      if (data) setColumns((current) => [...current, toGroupColumn(data as GroupColumnRow)]);
+    } else {
+      setColumns((current) => [...current, { id: `custom-${Date.now()}`, label, sortOrder }]);
+    }
+
     setNewColumnLabel("");
   }
 
-  function startEditing(column: CustomGroupColumn) {
+  function startEditing(column: BooleanGroupColumn) {
     setEditingColumnId(column.id);
     setEditingLabel(column.label);
   }
 
-  function saveColumnLabel(id: string) {
+  async function saveColumnLabel(id: string) {
     const label = editingLabel.trim();
     if (label) {
-      setCustomColumns((columns) => columns.map((column) => column.id === id ? { ...column, label } : column));
+      if (usingRemote && supabase) {
+        const { error } = await supabase
+          .from("group_columns")
+          .update({ label, updated_at: new Date().toISOString() })
+          .eq("id", id);
+        if (error) {
+          onError(error.message);
+        } else {
+          setColumns((current) => current.map((column) => column.id === id ? { ...column, label } : column));
+        }
+      } else {
+        setColumns((current) => current.map((column) => column.id === id ? { ...column, label } : column));
+      }
     }
     setEditingColumnId(null);
     setEditingLabel("");
   }
 
-  function removeColumn(id: string) {
-    setCustomColumns((columns) => columns.filter((column) => column.id !== id));
+  async function removeColumn(id: string) {
+    const column = columns.find((item) => item.id === id);
+    if (column?.fixed) return;
+
+    if (usingRemote && supabase) {
+      const { error } = await supabase
+        .from("group_columns")
+        .update({ active: false, updated_at: new Date().toISOString() })
+        .eq("id", id);
+      if (error) {
+        onError(error.message);
+        return;
+      }
+    }
+
+    setColumns((current) => current.filter((item) => item.id !== id));
     setValues((current) => {
       const next: GroupValueStore = {};
       for (const [memberId, row] of Object.entries(current)) {
@@ -621,21 +772,48 @@ function Group({ members }: { members: GroupMember[] }) {
     });
   }
 
-  function cellValue(member: GroupMember, column: BooleanGroupColumn) {
-    const override = values[member.controlNumber]?.[column.id];
-    if (override !== undefined) return override;
-    return column.source ? Boolean(member[column.source]) : false;
+  function memberKey(member: UiGroupMember) {
+    return usingRemote && member.profileId ? member.profileId : member.controlNumber;
   }
 
-  function toggleCell(member: GroupMember, column: BooleanGroupColumn) {
+  function cellValue(member: UiGroupMember, column: BooleanGroupColumn) {
+    const override = values[memberKey(member)]?.[column.id];
+    if (override !== undefined) return override;
+    return !usingRemote && column.source ? Boolean(member[column.source]) : false;
+  }
+
+  async function toggleCell(member: UiGroupMember, column: BooleanGroupColumn) {
+    const key = memberKey(member);
     const nextValue = !cellValue(member, column);
     setValues((current) => ({
       ...current,
-      [member.controlNumber]: {
-        ...(current[member.controlNumber] ?? {}),
+      [key]: {
+        ...(current[key] ?? {}),
         [column.id]: nextValue,
       },
     }));
+
+    if (usingRemote && supabase && member.profileId) {
+      const { error } = await supabase
+        .from("group_column_values")
+        .upsert({
+          profile_id: member.profileId,
+          column_id: column.id,
+          value: nextValue,
+          updated_by: profile?.id ?? null,
+          updated_at: new Date().toISOString(),
+        }, { onConflict: "profile_id,column_id" });
+      if (error) {
+        onError(error.message);
+        setValues((current) => ({
+          ...current,
+          [key]: {
+            ...(current[key] ?? {}),
+            [column.id]: !nextValue,
+          },
+        }));
+      }
+    }
   }
 
   return (
@@ -643,11 +821,11 @@ function Group({ members }: { members: GroupMember[] }) {
       <section className="groupToolbar">
         <div>
           <strong>Lista de grupo</strong>
-          <span>{members.length} alumnos</span>
+          <span>{members.length} alumnos · {usingRemote ? "Sincronizada en Supabase" : "Demo local"}</span>
         </div>
         <label>
-          <input value={newColumnLabel} onChange={(event) => setNewColumnLabel(event.target.value)} onKeyDown={(event) => event.key === "Enter" ? addColumn() : undefined} placeholder="Nuevo encabezado" />
-          <button onClick={addColumn} type="button"><Plus size={16} />Columna</button>
+          <input value={newColumnLabel} onChange={(event) => setNewColumnLabel(event.target.value)} onKeyDown={(event) => { if (event.key === "Enter") void addColumn(); }} placeholder="Nuevo encabezado" />
+          <button onClick={() => void addColumn()} type="button"><Plus size={16} />Columna</button>
         </label>
       </section>
       <div className="tableWrap groupTableWrap">
@@ -657,27 +835,23 @@ function Group({ members }: { members: GroupMember[] }) {
               <th>No. Control</th>
               <th>Correo electrónico</th>
               <th>Nombre completo</th>
-              {booleanColumns.map((column) => (
+              {columns.map((column) => (
                 <th className="booleanHeader" key={column.id}>
-                  {column.fixed ? (
-                    <span>{column.label}</span>
-                  ) : (
-                    <div className="groupColumnHeader">
-                      {editingColumnId === column.id ? (
-                        <input
-                          value={editingLabel}
-                          onChange={(event) => setEditingLabel(event.target.value)}
-                          onBlur={() => saveColumnLabel(column.id)}
-                          onKeyDown={(event) => event.key === "Enter" ? saveColumnLabel(column.id) : undefined}
-                          autoFocus
-                        />
-                      ) : (
-                        <span>{column.label}</span>
-                      )}
-                      <button aria-label={`Editar ${column.label}`} title="Editar encabezado" onClick={() => startEditing(column)} type="button"><Edit3 size={14} /></button>
-                      <button aria-label={`Eliminar ${column.label}`} title="Eliminar columna" onClick={() => removeColumn(column.id)} type="button"><Trash2 size={14} /></button>
-                    </div>
-                  )}
+                  <div className="groupColumnHeader">
+                    {editingColumnId === column.id ? (
+                      <input
+                        value={editingLabel}
+                        onChange={(event) => setEditingLabel(event.target.value)}
+                        onBlur={() => void saveColumnLabel(column.id)}
+                        onKeyDown={(event) => { if (event.key === "Enter") void saveColumnLabel(column.id); }}
+                        autoFocus
+                      />
+                    ) : (
+                      <span>{column.label}</span>
+                    )}
+                    <button aria-label={`Editar ${column.label}`} title="Editar encabezado" onClick={() => startEditing(column)} type="button"><Edit3 size={14} /></button>
+                    {column.fixed ? <span className="headerSpacer" /> : <button aria-label={`Eliminar ${column.label}`} title="Eliminar columna" onClick={() => void removeColumn(column.id)} type="button"><Trash2 size={14} /></button>}
+                  </div>
                 </th>
               ))}
             </tr>
@@ -688,11 +862,11 @@ function Group({ members }: { members: GroupMember[] }) {
                 <td>{member.controlNumber}</td>
                 <td>{member.email}</td>
                 <td>{member.fullName}</td>
-                {booleanColumns.map((column) => {
+                {columns.map((column) => {
                   const checked = cellValue(member, column);
                   return (
                     <td className="booleanCell" key={column.id}>
-                      <button className={`boolToggle ${checked ? "on" : ""}`} aria-pressed={checked} onClick={() => toggleCell(member, column)} type="button">
+                      <button className={`boolToggle ${checked ? "on" : ""}`} aria-pressed={checked} onClick={() => void toggleCell(member, column)} type="button">
                         {checked ? <Check size={14} /> : <X size={14} />}
                         <span>{checked ? "Sí" : "No"}</span>
                       </button>
@@ -775,6 +949,36 @@ function toProfile(row: Record<string, unknown>): Profile { return { id: String(
 function toCourse(row: Record<string, unknown>): CourseConfig { return { id: String(row.id), name: String(row.name), shortName: String(row.short_name ?? row.name), color: String(row.color ?? "#4285dc"), icon: String(row.icon ?? "book"), cardSize: cardSize(row.card_size), active: Boolean(row.active ?? true) }; }
 function toSection(row: Record<string, unknown>): SectionConfig { return { id: String(row.id), name: String(row.name), path: String(row.path), color: String(row.color ?? "#4285dc"), icon: String(row.icon ?? "folder"), cardSize: cardSize(row.card_size), previewStyle: String(row.preview_style ?? "thumbnail"), active: Boolean(row.active ?? true) }; }
 function toTask(row: Record<string, unknown>): UiTask { const course = asOne(row.courses as Record<string, unknown> | Record<string, unknown>[] | null); const type = asOne(row.task_types as Record<string, unknown> | Record<string, unknown>[] | null); const dueDate = String(row.due_date); const daysRemaining = calculateDaysRemaining(dueDate); const next = deriveStatus(status(row.status), daysRemaining); return { id: String(row.id), course: String(course?.name ?? "Sin materia"), dueDate, dueTime: String(row.due_time ?? "23:59").slice(0, 5), title: String(row.title ?? "Sin título"), materialNeeded: row.material_needed ? String(row.material_needed) : "", materialUrl: row.material_url ? String(row.material_url) : "", deliveryType: delivery(type?.name), status: next, daysRemaining, notes: row.notes ? String(row.notes) : "", platformUrl: row.platform_url ? String(row.platform_url) : "", visibleToReaders: Boolean(row.visible_to_students), courseColor: course?.color ? String(course.color) : undefined, taskTypeColor: type?.color ? String(type.color) : undefined, courseCardSize: cardSize(course?.card_size) }; }
+function toGroupMember(row: Record<string, unknown>): UiGroupMember {
+  const email = String(row.email ?? "");
+  const fallbackControl = email.includes("@") ? email.split("@")[0] : String(row.id ?? "");
+  return {
+    profileId: String(row.id),
+    controlNumber: String(row.control_number ?? fallbackControl),
+    email,
+    fullName: String(row.full_name ?? email ?? "Sin nombre"),
+    attended: false,
+    licenseIssue: false,
+    authIssue: false,
+  };
+}
+function toGroupColumn(row: GroupColumnRow): BooleanGroupColumn {
+  const source = row.source_key === "attended" || row.source_key === "licenseIssue" || row.source_key === "authIssue" ? row.source_key : undefined;
+  return {
+    id: String(row.id),
+    label: String(row.label),
+    source,
+    fixed: Boolean(row.fixed),
+    sortOrder: Number(row.sort_order ?? 0),
+  };
+}
+function toGroupValueStore(rows: GroupValueRow[]): GroupValueStore {
+  return rows.reduce<GroupValueStore>((store, row) => {
+    const memberId = String(row.profile_id);
+    store[memberId] = { ...(store[memberId] ?? {}), [String(row.column_id)]: Boolean(row.value) };
+    return store;
+  }, {});
+}
 function normalizePreferences(value: unknown): UserPreferences {
   const input = typeof value === "object" && value ? value as Partial<UserPreferences> : {};
   return {
