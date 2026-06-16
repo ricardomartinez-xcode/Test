@@ -1,6 +1,8 @@
 import { NextResponse } from "next/server";
-import { createPublicR2Url, createR2ReadUrl, hasR2Config } from "@/lib/server/r2";
+import { createPublicR2Url, createR2ReadUrl, hasR2Config, resolveR2ObjectKey } from "@/lib/server/r2";
 import { createSupabaseServerClient } from "@/lib/supabase/server";
+
+const isDebug = process.env.R2_DEBUG === "1";
 
 type RouteContext = { params: Promise<{ id: string }> };
 
@@ -29,10 +31,46 @@ export async function GET(request: Request, context: RouteContext) {
   if (!data) return NextResponse.json({ error: "Material no encontrado." }, { status: 404 });
   if (!data.r2_key) return NextResponse.json({ error: "Este material no tiene asset R2 asociado." }, { status: 404 });
 
-  const publicUrl = createPublicR2Url(data.r2_key);
+  let resolvedKey = data.r2_key;
 
-  // When a Cloudflare R2 custom domain is configured, prefer it over presigned S3 URLs.
-  // This keeps browser previews stable and avoids exposing the S3-compatible endpoint.
+  if (hasR2Config()) {
+    try {
+      resolvedKey = await resolveR2ObjectKey({ key: data.r2_key, fileName: data.file_name, title: data.title });
+
+      if (resolvedKey !== data.r2_key) {
+        await supabase
+          .from("materials")
+          .update({
+            r2_key: resolvedKey,
+            source_url: createPublicR2Url(resolvedKey),
+            preview_url: createPublicR2Url(resolvedKey),
+            updated_at: new Date().toISOString(),
+          })
+          .eq("id", data.id);
+      }
+    } catch (resolveError) {
+      if (isDebug) {
+        return NextResponse.json(
+          {
+            error: resolveError instanceof Error ? resolveError.message : "No se pudo resolver el objeto R2.",
+            materialId: data.id,
+            r2Key: data.r2_key,
+            fileName: data.file_name,
+            title: data.title,
+          },
+          { status: 404 },
+        );
+      }
+
+      return NextResponse.json(
+        { error: resolveError instanceof Error ? resolveError.message : "No se pudo resolver el objeto R2." },
+        { status: 404 },
+      );
+    }
+  }
+
+  const publicUrl = createPublicR2Url(resolvedKey);
+
   if (publicUrl) return NextResponse.redirect(publicUrl, { status: 302 });
 
   if (!hasR2Config()) {
@@ -41,7 +79,7 @@ export async function GET(request: Request, context: RouteContext) {
 
   try {
     const signedUrl = await createR2ReadUrl({
-      key: data.r2_key,
+      key: resolvedKey,
       fileName: data.file_name || data.title,
       contentType: data.content_type,
       disposition: mode === "download" ? "attachment" : "inline",
