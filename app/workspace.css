@@ -1,0 +1,401 @@
+button svg,
+a svg {
+  display: block;
+}
+
+.loginCard,
+.settingsCard,
+.adminHero,
+.adminCard,
+.metricCard,
+.libraryHero,
+.sectionCard,
+.materialCardV2,
+.drawer,
+.offline,
+.taskDetailPanel {
+  border-radius: 8px;
+}
+
+.iconButton {
+  border-radius: 8px;
+  font-size: 0;
+}
+
+.topAppBar {
+  grid-template-columns: 42px 38px minmax(0, 1fr) 42px 42px;
+}
+
+.iconButton:hover,
+.iconButton:focus-visible {
+  background: #eef5ff;
+  outline: none;
+}
+
+.bottomNav button {
+  gap: 5px;
+}
+
+.bottomNav button svg {
+  width: 22px;
+  height: 22px;
+}
+
+.drawerItem span {
+  display: grid;
+  place-items: center;
+}
+
+.accountRow {
+  grid-template-columns: 70px minmax(0, 1fr) auto;
+}
+
+.logoutButton {
+  min-height: 38px;
+  border: 1px solid #d0d7e2;
+  border-radius: 8px;
+  background: #fff;
+  color: #1f4f86;
+  display: inline-flex;
+  align-items: center;
+  gap: 7px;
+  padding: 0 10px;
+  font-size: 13px;
+  font-weight: 800;
+  cursor: pointer;
+}
+
+.calendarWorkspace {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) minmax(280px, 320px);
+  gap: 14px;
+  padding: 14px;
+  background: #f5f7fb;
+}
+
+.calendarPane {
+  min-width: 0;
+  overflow: hidden;
+  background: #fff;
+  border: 1px solid #d8e0ea;
+  border-radius: 8px;
+}
+
+.calendarPane .viewTabs {
+  height: 54px;
+  padding: 8px 18px 0;
+  font-size: 16px;
+}
+
+.calendarPane .viewTabs span,
+.calendarPane .viewTabs strong,
+.calendarPane .viewTabs button {
+  height: 44px;
+}
+
+.calendarPane .viewTabs button {
+  font-size: 14px;
+  text-transform: uppercase;
+}
+
+.calendarPane .monthHead {
+  height: 50px;
+}
+
+.calendarPane .monthHead h2 {
+  font-size: 21px;
+  font-weight: 700;
+}
+
+.calendarPane .weekdays {
+  height: 32px;
+  font-size: 14px;
+}
+
+.calendarPane .dayCell {
+  min-height: 148px;
+  overflow: visible;
+  padding: 8px 6px 7px;
+}
+
+.calendarPane .dayNumber {
+  min-width: 25px;
+  height: 25px;
+  margin: 0 0 7px;
+  font-size: 13px;
+}
+
+.calendarPane .eventStack {
+  position: static;
+  display: grid;
+  gap: 5px;
+}
+
+.calendarEvent {
+  width: 100%;
+  min-width: 0;
+  min-height: 31px;
+  height: auto;
+  border: 1px solid #e2e8f0;
+  border-left: 4px solid #4285dc;
+  border-radius: 7px;
+  background: #fff;
+  color: #1f2937;
+  display: grid;
+  grid-template-columns: auto minmax(0, 1fr);
+  align-items: start;
+  gap: 5px;
+  padding: 5px 6px;
+  text-align: left;
+  white-space: normal;
+  line-height: 1.15;
+  cursor: pointer;
+  box-shadow: 0 4px 10px rgba(15, 23, 42, 0.05);
+}
+
+.calendarEvent span {
+  color: #64748b;
+  font-size: 10px;
+  font-weight: 800;
+  line-height: 1.15;
+}
+
+.calendarEvent strong {
+  min-width: 0;
+  color: #1f2937;
+  font-size: 11px;
+  font-weight: 800;
+  line-height: 1.15;
+  overflow-wrap: anywhere;
+}
+
+.calendarEvent.selected {
+  border-color: #0f766e;
+  background: #ecfdf7;
+}
+
+.moreEvents {
+  min-height: 25px;
+  border: 1px dashed #cbd5e1;
+  border-radius: 7px;
+  background: #f8fafc;
+  color: #1f4f86;
+  font-size: 12px;
+  font-weight: 900;
+  cursor: pointer;
+}
+
+.taskDetailPanel {
+  position: sticky;
+  top: 78px;
+  align-self: start;
+  min-width: 0;
+  overflow: hidden;
+  background: #fff;
+  border: 1px solid #d8e0ea;
+  box-shadow: 0 14px 34px rgba(15, 23, 42, 0.05);
+}
+
+.taskDetailPanel.empty {
+  min-height: 160px;
+  display: grid;
+  place-items: center;
+  align-content: center;
+  gap: 8px;
+  color: #667085;
+}
+
+.detailAccent {
+  height: 8px;
+}
+
+.detailHeader {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  padding: 14px 14px 0;
+}
+
+.detailHeader span,
+.detailHeader strong {
+  border: 1px solid #d0d7e2;
+  border-radius: 999px;
+  padding: 5px 8px;
+  color: #344054;
+  background: #f8fafc;
+  font-size: 11px;
+  line-height: 1;
+  font-weight: 900;
+}
+
+.taskDetailPanel h3 {
+  margin: 14px 14px 10px;
+  color: #111827;
+  font-size: 20px;
+  line-height: 1.12;
+  letter-spacing: 0;
+}
+
+.detailMeta {
+  display: grid;
+  gap: 8px;
+  margin: 0;
+  padding: 0 14px 12px;
+}
+
+.detailMeta div {
+  display: grid;
+  grid-template-columns: 72px minmax(0, 1fr);
+  gap: 8px;
+  align-items: start;
+}
+
+.detailMeta dt {
+  color: #667085;
+  font-size: 12px;
+  font-weight: 800;
+}
+
+.detailMeta dd {
+  min-width: 0;
+  margin: 0;
+  color: #1f2937;
+  font-size: 13px;
+  font-weight: 700;
+}
+
+.detailText,
+.detailNote {
+  margin: 0 14px 12px;
+  color: #344054;
+  font-size: 13px;
+  line-height: 1.45;
+}
+
+.detailNote {
+  border-left: 3px solid #f59e0b;
+  padding-left: 10px;
+}
+
+.detailActions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  padding: 0 14px 14px;
+}
+
+.detailActions a {
+  min-height: 34px;
+  display: inline-flex;
+  align-items: center;
+  gap: 7px;
+  border: 1px solid #d0d7e2;
+  border-radius: 8px;
+  padding: 0 10px;
+  color: #1f4f86;
+  text-decoration: none;
+  font-size: 13px;
+  font-weight: 900;
+}
+
+.days {
+  border-radius: 999px;
+  background: #fff7ed;
+  color: #b45309;
+  padding: 4px 7px;
+  font-size: 12px;
+}
+
+.openIcon {
+  width: 34px;
+  height: 34px;
+  border: 1px solid #d0d7e2;
+  border-radius: 8px;
+  display: grid;
+  place-items: center;
+  font-size: 0;
+}
+
+.miniAction {
+  display: grid;
+  place-items: center;
+}
+
+.materialThumb.hasPreview {
+  position: relative;
+  background: #f8fafc;
+}
+
+.materialThumb.hasPreview img,
+.materialThumb.hasPreview iframe {
+  position: absolute;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+  border: 0;
+  object-fit: cover;
+  background: #fff;
+  pointer-events: none;
+}
+
+.materialThumb.pdfPreview {
+  box-shadow: inset 0 0 0 1px rgba(15, 23, 42, 0.08);
+}
+
+.materialActions a,
+.materialActions span {
+  width: 36px;
+  min-width: 36px;
+  padding: 0;
+  border-radius: 8px;
+}
+
+.libraryViewToggle button {
+  width: 42px;
+  display: grid;
+  place-items: center;
+}
+
+@media (max-width: 900px) {
+  .calendarWorkspace {
+    grid-template-columns: 1fr;
+    padding: 10px;
+  }
+
+  .taskDetailPanel {
+    position: static;
+  }
+}
+
+@media (max-width: 620px) {
+  .calendarPane .dayCell {
+    min-height: 112px;
+    padding: 6px 3px;
+  }
+
+  .calendarEvent {
+    grid-template-columns: 1fr;
+    gap: 2px;
+    min-height: 30px;
+    padding: 4px 5px;
+  }
+
+  .calendarEvent span {
+    font-size: 9px;
+  }
+
+  .calendarEvent strong {
+    font-size: 10px;
+    line-height: 1.12;
+  }
+
+  .accountRow {
+    grid-template-columns: 42px minmax(0, 1fr);
+  }
+
+  .logoutButton {
+    grid-column: 1 / -1;
+    justify-content: center;
+  }
+}

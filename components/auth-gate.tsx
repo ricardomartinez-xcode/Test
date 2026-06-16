@@ -66,6 +66,10 @@ export function AuthGate({ children }: AuthGateProps) {
     }
   }
 
+  if (!supabase) {
+    return <>{children}</>;
+  }
+
   if (!ready) {
     return (
       <main className="loginScreen authPage">

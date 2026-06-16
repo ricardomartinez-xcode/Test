@@ -1,12 +1,27 @@
 "use client";
 
 import { useEffect, useMemo, useState, type CSSProperties } from "react";
+import {
+  CalendarDays,
+  Check,
+  CheckCircle2,
+  ExternalLink,
+  FolderOpen,
+  ListTodo,
+  LogOut,
+  Menu,
+  RefreshCw,
+  Search,
+  Settings,
+  SlidersHorizontal,
+  Users,
+} from "lucide-react";
 import { AdminHub } from "@/components/admin-hub";
 import { MaterialLibrary } from "@/components/material-library";
-import type { ConfigColumn, DeliveryType, GroupMember, Role, Task, TaskStatus } from "@/lib/domain";
+import type { DeliveryType, GroupMember, Role, Task, TaskStatus } from "@/lib/domain";
 import { deliveryTypes, statuses } from "@/lib/domain";
-import { createSupabaseBrowserClient } from "@/lib/supabase/client";
-import { calculateDaysRemaining, deriveReaderVisibility, deriveStatus, shortText, sortTasks } from "@/lib/task-utils";
+import { createSupabaseBrowserClient, hasSupabaseBrowserConfig } from "@/lib/supabase/client";
+import { calculateDaysRemaining, deriveReaderVisibility, deriveStatus, sortTasks } from "@/lib/task-utils";
 
 type SupabaseBrowser = NonNullable<ReturnType<typeof createSupabaseBrowserClient>>;
 type Tab = "calendar" | "tasks" | "materials" | "completed" | "group" | "admin" | "prefs";
@@ -15,7 +30,6 @@ type CardSize = "compact" | "medium" | "large";
 type Props = {
   initialTasks: Task[];
   initialMembers: GroupMember[];
-  initialConfigColumns: ConfigColumn[];
 };
 
 type UserPreferences = {
@@ -69,26 +83,54 @@ const fallbackPrefs: UserPreferences = {
   theme: "system",
 };
 
-export function AppShellV5({ initialTasks, initialMembers, initialConfigColumns }: Props) {
+const hasSupabaseConfig = hasSupabaseBrowserConfig();
+
+const demoProfile: Profile = {
+  id: "local-demo-admin",
+  email: "demo.admin@pscv.local",
+  fullName: "Administrador demo",
+  role: "owner",
+  preferences: fallbackPrefs,
+};
+
+const demoCourses: CourseConfig[] = [
+  { id: "aprendizaje", name: "Psicología del Aprendizaje", shortName: "Aprendizaje", color: "#2f77d0", icon: "book", cardSize: "medium", active: true },
+  { id: "evaluacion", name: "Evaluación Psicológica I", shortName: "Evaluación", color: "#7c3aed", icon: "clipboard", cardSize: "medium", active: true },
+  { id: "social", name: "Problemática Social Mexicana", shortName: "Social", color: "#d97706", icon: "users", cardSize: "medium", active: true },
+  { id: "grupales", name: "Procesos Grupales", shortName: "Grupales", color: "#0f9f8f", icon: "network", cardSize: "medium", active: true },
+  { id: "conducta", name: "Alteraciones de la Conducta", shortName: "Conducta", color: "#dc2626", icon: "brain", cardSize: "medium", active: true },
+];
+
+const demoSections: SectionConfig[] = [
+  { id: "clase", name: "Materiales de clase", path: "Psicología/Materiales de clase", color: "#2f77d0", icon: "folder", cardSize: "medium", previewStyle: "thumbnail", active: true },
+  { id: "apa", name: "APA e investigación", path: "Psicología/Materiales de clase/APA e investigación", color: "#7c3aed", icon: "file", cardSize: "medium", previewStyle: "thumbnail", active: true },
+  { id: "clinica", name: "Psicología clínica", path: "Psicología/Materiales de clase/Psicología clínica", color: "#0f9f8f", icon: "file", cardSize: "medium", previewStyle: "thumbnail", active: true },
+];
+
+export function AppShellV5({ initialTasks, initialMembers }: Props) {
   const supabase = useMemo(() => createSupabaseBrowserClient(), []);
-  const [ready, setReady] = useState(false);
-  const [email, setEmail] = useState<string | null>(null);
-  const [profile, setProfile] = useState<Profile | null>(null);
+  const [ready, setReady] = useState(!hasSupabaseConfig);
+  const [email, setEmail] = useState<string | null>(hasSupabaseConfig ? null : demoProfile.email);
+  const [profile, setProfile] = useState<Profile | null>(hasSupabaseConfig ? null : demoProfile);
   const [tab, setTab] = useState<Tab>("calendar");
   const [drawerOpen, setDrawerOpen] = useState(false);
   const [searchOpen, setSearchOpen] = useState(false);
   const [query, setQuery] = useState("");
   const [error, setError] = useState<string | null>(null);
   const [tasks, setTasks] = useState<UiTask[]>(initialTasks);
-  const [courses, setCourses] = useState<CourseConfig[]>([]);
-  const [sections, setSections] = useState<SectionConfig[]>([]);
+  const [courses, setCourses] = useState<CourseConfig[]>(hasSupabaseConfig ? [] : demoCourses);
+  const [sections, setSections] = useState<SectionConfig[]>(hasSupabaseConfig ? [] : demoSections);
   const [cursor, setCursor] = useState(new Date());
+  const [selectedTaskId, setSelectedTaskId] = useState<string | null>(initialTasks[0]?.id ?? null);
 
   const prefs = profile?.preferences ?? fallbackPrefs;
   const role: Role = profile?.role === "admin" || profile?.role === "owner" ? "admin" : "reader";
 
   useEffect(() => {
-    if (!supabase) return;
+    if (!supabase) {
+      setReady(true);
+      return;
+    }
     let mounted = true;
 
     supabase.auth.getSession().then(({ data, error: sessionError }) => {
@@ -144,6 +186,15 @@ export function AppShellV5({ initialTasks, initialMembers, initialConfigColumns 
     if (supabase) await supabase.auth.signOut();
     setEmail(null);
     setProfile(null);
+    setDrawerOpen(false);
+  }
+
+  function enterLocalDemo() {
+    setEmail(demoProfile.email);
+    setProfile(demoProfile);
+    setCourses(demoCourses);
+    setSections(demoSections);
+    setTab("calendar");
   }
 
   async function markDone(id: string) {
@@ -165,6 +216,20 @@ export function AppShellV5({ initialTasks, initialMembers, initialConfigColumns 
     );
   }
 
+  if (!email && !supabase) {
+    return (
+      <main className="loginScreen authPage">
+        <section className="loginCard authCard authCardSimple">
+          <img src="/icon.svg" className="authLogoMain" alt="PSCV Room" />
+          <h1 className="authTitle">PSCV Room</h1>
+          <button className="microsoftButton" onClick={enterLocalDemo} type="button">
+            Entrar en demo
+          </button>
+        </section>
+      </main>
+    );
+  }
+
   const normalizedTasks = tasks.map((task) => {
     const daysRemaining = calculateDaysRemaining(task.dueDate);
     const status = deriveStatus(task.status, daysRemaining);
@@ -177,6 +242,9 @@ export function AppShellV5({ initialTasks, initialMembers, initialConfigColumns 
   const visibleTasks = sortTasks(listBase);
   const completedTasks = sortTasks(normalizedTasks.filter((task) => task.status === "Entregado"));
   const shownTasks = filterTasks(visibleTasks, query);
+  const selectedTask = selectedTaskId
+    ? visibleTasks.find((task) => task.id === selectedTaskId) ?? visibleTasks[0] ?? null
+    : visibleTasks[0] ?? null;
 
   function go(next: Tab) {
     if (["completed", "group", "admin"].includes(next) && role !== "admin") return;
@@ -187,7 +255,7 @@ export function AppShellV5({ initialTasks, initialMembers, initialConfigColumns 
   return (
     <main className={`mobileApp density-${prefs.taskDensity} ${role === "admin" ? "adminShell" : ""}`}>
       <header className="topAppBar">
-        <button className="iconButton" onClick={() => setDrawerOpen(true)} type="button">☰</button>
+        <button className="iconButton" aria-label="Abrir navegación" title="Navegación" onClick={() => setDrawerOpen(true)} type="button"><Menu size={23} /></button>
         <img src="/icon.svg" className="appLogo" alt="PSCV" />
         <div className="barTitle">
           {searchOpen ? (
@@ -196,15 +264,24 @@ export function AppShellV5({ initialTasks, initialMembers, initialConfigColumns 
             titleFor(tab)
           )}
         </div>
-        <button className="iconButton" onClick={() => setSearchOpen((value) => !value)} type="button">⌕</button>
-        <button className="iconButton" onClick={() => email && supabase ? void loadData(supabase, email) : undefined} type="button">↻</button>
+        <button className="iconButton" aria-label="Buscar" title="Buscar" onClick={() => setSearchOpen((value) => !value)} type="button"><Search size={22} /></button>
+        <button className="iconButton" aria-label="Actualizar" title="Actualizar" onClick={() => email && supabase ? void loadData(supabase, email) : undefined} type="button"><RefreshCw size={21} /></button>
       </header>
 
-      <Drawer open={drawerOpen} email={email ?? ""} role={role} active={tab} onClose={() => setDrawerOpen(false)} onSelect={go} onSignOut={signOut} />
+      <Drawer
+        open={drawerOpen}
+        email={email ?? ""}
+        role={role}
+        active={tab}
+        sourceLabel={supabase ? "Supabase conectado" : "Demo local"}
+        onClose={() => setDrawerOpen(false)}
+        onSelect={go}
+        onSignOut={signOut}
+      />
       {error ? <div className="systemBanner">{error}</div> : null}
 
       <section className="screen">
-        {tab === "calendar" ? <Calendar tasks={visibleTasks} cursor={cursor} setCursor={setCursor} /> : null}
+        {tab === "calendar" ? <Calendar tasks={visibleTasks} cursor={cursor} setCursor={setCursor} selectedTask={selectedTask} onSelect={setSelectedTaskId} /> : null}
         {tab === "tasks" ? <TaskList tasks={shownTasks} role={role} onDone={(id) => void markDone(id)} /> : null}
         {tab === "materials" ? <MaterialLibrary previewSize={prefs.materialPreviewSize} globalQuery={query} /> : null}
         {tab === "completed" ? <TaskList tasks={completedTasks} role="reader" onDone={() => undefined} /> : null}
@@ -214,7 +291,6 @@ export function AppShellV5({ initialTasks, initialMembers, initialConfigColumns 
           <AdminHub
             courses={courses}
             sections={sections}
-            columns={initialConfigColumns}
             supabase={supabase}
             reload={() => email && supabase ? loadData(supabase, email) : Promise.resolve()}
             onCourses={setCourses}
@@ -225,18 +301,18 @@ export function AppShellV5({ initialTasks, initialMembers, initialConfigColumns 
       </section>
 
       <nav className={`bottomNav ${role === "admin" ? "adminBottomNav" : ""}`}>
-        <button className={tab === "calendar" ? "active" : ""} onClick={() => go("calendar")} type="button"><span>▦</span>Calendario</button>
-        <button className={tab === "tasks" ? "active" : ""} onClick={() => go("tasks")} type="button"><span>▤</span>Tareas</button>
+        <button className={tab === "calendar" ? "active" : ""} onClick={() => go("calendar")} type="button"><CalendarDays size={22} />Calendario</button>
+        <button className={tab === "tasks" ? "active" : ""} onClick={() => go("tasks")} type="button"><ListTodo size={22} />Tareas</button>
         {role === "admin" ? (
-          <button className={tab === "admin" ? "active" : ""} onClick={() => go("admin")} type="button"><span>▣</span>Admin</button>
+          <button className={tab === "admin" ? "active" : ""} onClick={() => go("admin")} type="button"><SlidersHorizontal size={22} />Admin</button>
         ) : null}
-        <button className={tab === "materials" ? "active" : ""} onClick={() => go("materials")} type="button"><span>⬡</span>Materiales</button>
+        <button className={tab === "materials" ? "active" : ""} onClick={() => go("materials")} type="button"><FolderOpen size={22} />Materiales</button>
       </nav>
     </main>
   );
 }
 
-function Drawer({ open, email, role, active, onClose, onSelect, onSignOut }: { open: boolean; email: string; role: Role; active: Tab; onClose: () => void; onSelect: (tab: Tab) => void; onSignOut: () => void }) {
+function Drawer({ open, email, role, active, sourceLabel, onClose, onSelect, onSignOut }: { open: boolean; email: string; role: Role; active: Tab; sourceLabel: string; onClose: () => void; onSelect: (tab: Tab) => void; onSignOut: () => void }) {
   return (
     <>
       <div className={`scrim ${open ? "show" : ""}`} onClick={onClose} />
@@ -245,24 +321,24 @@ function Drawer({ open, email, role, active, onClose, onSelect, onSignOut }: { o
           <img src="/icon.svg" alt="PSCV" />
           <div>
             <strong>{role === "admin" ? "PSCV-ADMIN" : "PSCV-ROOM"}</strong>
-            <span className="drawerSource">Supabase conectado</span>
+            <span className="drawerSource">{sourceLabel}</span>
           </div>
         </div>
         <nav className="drawerNav">
-          <DrawerItem icon="▦" label="Calendario" active={active === "calendar"} onClick={() => onSelect("calendar")} />
-          <DrawerItem icon="▤" label="Tareas" active={active === "tasks"} onClick={() => onSelect("tasks")} />
-          <DrawerItem icon="⬡" label="Materiales" active={active === "materials"} onClick={() => onSelect("materials")} />
-          <DrawerItem icon="⚙" label="Preferencias" active={active === "prefs"} onClick={() => onSelect("prefs")} />
-          {role === "admin" ? <DrawerItem icon="✓" label="Entregadas" active={active === "completed"} onClick={() => onSelect("completed")} /> : null}
-          {role === "admin" ? <DrawerItem icon="☷" label="Lista de grupo" active={active === "group"} onClick={() => onSelect("group")} /> : null}
-          {role === "admin" ? <DrawerItem icon="🛠" label="Configuración" active={active === "admin"} onClick={() => onSelect("admin")} /> : null}
+          <DrawerItem icon={<CalendarDays size={20} />} label="Calendario" active={active === "calendar"} onClick={() => onSelect("calendar")} />
+          <DrawerItem icon={<ListTodo size={20} />} label="Tareas" active={active === "tasks"} onClick={() => onSelect("tasks")} />
+          <DrawerItem icon={<FolderOpen size={20} />} label="Materiales" active={active === "materials"} onClick={() => onSelect("materials")} />
+          <DrawerItem icon={<Settings size={20} />} label="Preferencias" active={active === "prefs"} onClick={() => onSelect("prefs")} />
+          {role === "admin" ? <DrawerItem icon={<CheckCircle2 size={20} />} label="Entregadas" active={active === "completed"} onClick={() => onSelect("completed")} /> : null}
+          {role === "admin" ? <DrawerItem icon={<Users size={20} />} label="Lista de grupo" active={active === "group"} onClick={() => onSelect("group")} /> : null}
+          {role === "admin" ? <DrawerItem icon={<SlidersHorizontal size={20} />} label="Configuración" active={active === "admin"} onClick={() => onSelect("admin")} /> : null}
         </nav>
         <div className="drawerFooter">
-          <div className="offline">◉ Online <u>Supabase</u></div>
+          <div className="offline"><span>Online</span><u>{sourceLabel}</u></div>
           <div className="accountRow">
             <span className="avatar">{email[0]?.toUpperCase()}</span>
             <span>{email}</span>
-            <button onClick={onSignOut} type="button">⌄</button>
+            <button className="logoutButton" aria-label="Cerrar sesión" title="Cerrar sesión" onClick={onSignOut} type="button"><LogOut size={18} /><span>Cerrar sesión</span></button>
           </div>
         </div>
       </aside>
@@ -270,39 +346,88 @@ function Drawer({ open, email, role, active, onClose, onSelect, onSignOut }: { o
   );
 }
 
-function DrawerItem({ icon, label, active, onClick }: { icon: string; label: string; active: boolean; onClick: () => void }) {
+function DrawerItem({ icon, label, active, onClick }: { icon: React.ReactNode; label: string; active: boolean; onClick: () => void }) {
   return <button className={`drawerItem ${active ? "active" : ""}`} onClick={onClick} type="button"><span>{icon}</span>{label}</button>;
 }
 
-function Calendar({ tasks, cursor, setCursor }: { tasks: UiTask[]; cursor: Date; setCursor: (date: Date) => void }) {
+function Calendar({ tasks, cursor, setCursor, selectedTask, onSelect }: { tasks: UiTask[]; cursor: Date; setCursor: (date: Date) => void; selectedTask: UiTask | null; onSelect: (id: string) => void }) {
   const year = cursor.getFullYear();
   const month = cursor.getMonth();
   const cells = monthCells(year, month);
   const label = new Intl.DateTimeFormat("es-MX", { month: "long", year: "numeric" }).format(cursor);
+  const today = new Date().toISOString().slice(0, 10);
 
   return (
-    <div>
-      <div className="viewTabs"><span>Day</span><span>Week</span><strong>Month</strong><button type="button" onClick={() => setCursor(new Date())}>TODAY</button></div>
-      <div className="monthHead"><button onClick={() => setCursor(new Date(year, month - 1, 15))} type="button">‹</button><h2>{label}</h2><button onClick={() => setCursor(new Date(year, month + 1, 15))} type="button">›</button></div>
-      <div className="weekdays"><span>do</span><span>lu</span><span>ma</span><span>mi</span><span>ju</span><span>vi</span><span>sá</span></div>
-      <div className="monthGrid">
-        {cells.map((day, index) => {
-          const key = day ? `${year}-${String(month + 1).padStart(2, "0")}-${String(day).padStart(2, "0")}` : "";
-          const dayTasks = tasks.filter((task) => task.dueDate === key);
-          const today = new Date().toISOString().slice(0, 10);
-          return (
-            <div className="dayCell" key={`${key}-${index}`}>
-              {day ? <span className={`dayNumber ${key === today ? "today" : ""}`}>{String(day).padStart(2, "0")}</span> : null}
-              <div className="eventStack">
-                {dayTasks.slice(0, 3).map((task) => (
-                  <span className="calendarEvent" style={{ backgroundColor: task.taskTypeColor ?? task.courseColor ?? "#4285dc" } as CSSProperties} key={task.id}>{shortText(task.title, 13)}</span>
-                ))}
+    <div className="calendarWorkspace">
+      <section className="calendarPane">
+        <div className="viewTabs"><span>Día</span><span>Semana</span><strong>Mes</strong><button type="button" onClick={() => setCursor(new Date())}>Hoy</button></div>
+        <div className="monthHead"><button aria-label="Mes anterior" onClick={() => setCursor(new Date(year, month - 1, 15))} type="button">‹</button><h2>{label}</h2><button aria-label="Mes siguiente" onClick={() => setCursor(new Date(year, month + 1, 15))} type="button">›</button></div>
+        <div className="weekdays"><span>do</span><span>lu</span><span>ma</span><span>mi</span><span>ju</span><span>vi</span><span>sá</span></div>
+        <div className="monthGrid">
+          {cells.map((day, index) => {
+            const key = day ? `${year}-${String(month + 1).padStart(2, "0")}-${String(day).padStart(2, "0")}` : "";
+            const dayTasks = tasks.filter((task) => task.dueDate === key);
+            return (
+              <div className="dayCell" key={`${key}-${index}`}>
+                {day ? <span className={`dayNumber ${key === today ? "today" : ""}`}>{String(day).padStart(2, "0")}</span> : null}
+                <div className="eventStack">
+                  {dayTasks.slice(0, 3).map((task) => (
+                    <button
+                      className={`calendarEvent ${selectedTask?.id === task.id ? "selected" : ""}`}
+                      style={{ borderLeftColor: task.taskTypeColor ?? task.courseColor ?? "#4285dc" } as CSSProperties}
+                      key={task.id}
+                      title={`${task.dueTime} ${task.title}`}
+                      onClick={() => onSelect(task.id)}
+                      type="button"
+                    >
+                      <span>{task.dueTime}</span>
+                      <strong>{task.title}</strong>
+                    </button>
+                  ))}
+                  {dayTasks.length > 3 ? (
+                    <button className="moreEvents" onClick={() => onSelect(dayTasks[3].id)} type="button">+{dayTasks.length - 3}</button>
+                  ) : null}
+                </div>
               </div>
-            </div>
-          );
-        })}
-      </div>
+            );
+          })}
+        </div>
+      </section>
+      <TaskDetailPanel task={selectedTask} />
     </div>
+  );
+}
+
+function TaskDetailPanel({ task }: { task: UiTask | null }) {
+  if (!task) {
+    return (
+      <aside className="taskDetailPanel empty">
+        <CalendarDays size={24} />
+        <strong>Sin actividades</strong>
+      </aside>
+    );
+  }
+
+  return (
+    <aside className="taskDetailPanel">
+      <div className="detailAccent" style={{ background: task.taskTypeColor ?? task.courseColor ?? "#4285dc" }} />
+      <div className="detailHeader">
+        <span>{task.deliveryType}</span>
+        <strong>{task.status}</strong>
+      </div>
+      <h3>{task.title}</h3>
+      <dl className="detailMeta">
+        <div><dt>Materia</dt><dd>{task.course}</dd></div>
+        <div><dt>Entrega</dt><dd>{task.dueDate} · {task.dueTime}</dd></div>
+        <div><dt>Días</dt><dd>{task.daysRemaining}</dd></div>
+      </dl>
+      {task.materialNeeded ? <p className="detailText">{task.materialNeeded}</p> : null}
+      {task.notes ? <p className="detailNote">{task.notes}</p> : null}
+      <div className="detailActions">
+        {task.materialUrl ? <a href={task.materialUrl} target="_blank" rel="noreferrer"><ExternalLink size={16} />Material</a> : null}
+        {task.platformUrl ? <a href={task.platformUrl} target="_blank" rel="noreferrer"><ExternalLink size={16} />Plataforma</a> : null}
+      </div>
+    </aside>
   );
 }
 
@@ -315,14 +440,14 @@ function TaskList({ tasks, role, onDone }: { tasks: UiTask[]; role: Role; onDone
         if (!rows.length) return null;
         return (
           <section className="typeGroup" key={type}>
-            <h2 className="groupTitle" style={{ color: rows[0].taskTypeColor ?? undefined }}><span>▤</span>{type}</h2>
+            <h2 className="groupTitle" style={{ color: rows[0].taskTypeColor ?? undefined }}><ListTodo size={22} />{type}</h2>
             {rows.map((task) => (
               <article className={`dataRow taskRow card-${task.courseCardSize ?? "medium"}`} style={{ borderLeft: `5px solid ${task.courseColor ?? "#4285dc"}` }} key={task.id}>
                 <div className="rowMain"><strong>{task.title}</strong><span>{task.course}</span></div>
                 <div className="rowSide">
-                  <span className="days">◷ <u>{task.daysRemaining}</u></span>
-                  {task.materialUrl ? <a className="openIcon" href={task.materialUrl} target="_blank" rel="noreferrer">↗</a> : null}
-                  {role === "admin" ? <button className="miniAction" onClick={() => onDone(task.id)} type="button">✓</button> : null}
+                  <span className="days">D{task.daysRemaining}</span>
+                  {task.materialUrl ? <a className="openIcon" aria-label="Abrir material" title="Abrir material" href={task.materialUrl} target="_blank" rel="noreferrer"><ExternalLink size={20} /></a> : null}
+                  {role === "admin" ? <button className="miniAction" aria-label="Marcar entregada" title="Marcar entregada" onClick={() => onDone(task.id)} type="button"><Check size={16} /></button> : null}
                 </div>
               </article>
             ))}
