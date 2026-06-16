@@ -183,8 +183,9 @@ export function MaterialLibrary({ previewSize, globalQuery = "" }: MaterialLibra
 function MaterialCard({ material, view }: { material: LibraryMaterial; view: "library" | "list" }) {
   const section = material.section;
   const color = section?.color ?? "#4285dc";
-  const previewUrl = material.r2_key ? `/api/materials/${material.id}/file?mode=preview` : null;
-  const openUrl = material.r2_key ? `/api/materials/${material.id}/file?mode=download` : null;
+  const previewUrl = material.preview_url ?? material.source_url;
+  const openUrl = material.public_url ?? material.preview_url ?? material.source_url;
+  const isPublicR2 = Boolean(openUrl?.includes("r2.dev") || openUrl?.includes("/api/materials/"));
   const fileType = material.material_type ?? material.content_type?.split("/").at(-1)?.toUpperCase() ?? "PDF";
   const isPdf = (material.content_type ?? material.file_name ?? material.title).toLowerCase().includes("pdf");
   const size = formatBytes(material.size_bytes);
@@ -198,7 +199,7 @@ function MaterialCard({ material, view }: { material: LibraryMaterial; view: "li
       <div className="materialContent">
         <div className="materialMetaLine">
           <span style={{ color }}>{section?.name ?? "Material"}</span>
-          <span>R2</span>
+          <span>{isPublicR2 ? "R2" : "link"}</span>
           {size ? <span>{size}</span> : null}
         </div>
         <strong title={material.title}>{cleanTitle(material.title)}</strong>
