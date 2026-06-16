@@ -176,7 +176,7 @@ $$;
 create or replace function public.update_my_preferences(preferences_input jsonb)
 returns jsonb
 language plpgsql
-security definer
+security invoker
 set search_path = public
 as $$
 declare
@@ -214,6 +214,30 @@ as $$
   )
 $$;
 
+create or replace function public.enforce_profile_self_preferences_only()
+returns trigger
+language plpgsql
+set search_path = public
+as $$
+begin
+  if public.is_admin() then
+    return new;
+  end if;
+
+  if (to_jsonb(new) - 'preferences' - 'updated_at') <> (to_jsonb(old) - 'preferences' - 'updated_at') then
+    raise exception 'Solo puedes actualizar tus preferencias.';
+  end if;
+
+  return new;
+end;
+$$;
+
+drop trigger if exists trg_profile_self_preferences_only on public.app_profiles;
+create trigger trg_profile_self_preferences_only
+before update on public.app_profiles
+for each row
+execute function public.enforce_profile_self_preferences_only();
+
 create or replace view public.active_student_tasks as
 select
   t.*,
@@ -245,6 +269,7 @@ alter table public.audit_log enable row level security;
 
 create policy "profiles read own or admin" on public.app_profiles for select using (auth_user_id = auth.uid() or public.is_admin());
 create policy "profiles admin write" on public.app_profiles for all using (public.is_admin()) with check (public.is_admin());
+create policy "profiles own preferences update" on public.app_profiles for update using (auth_user_id = auth.uid() and active = true) with check (auth_user_id = auth.uid() and active = true);
 
 create policy "settings read authenticated" on public.app_settings for select using (auth.role() = 'authenticated');
 create policy "settings admin write" on public.app_settings for all using (public.is_admin()) with check (public.is_admin());
