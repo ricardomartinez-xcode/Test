@@ -1,5 +1,6 @@
 import type { Metadata, Viewport } from "next";
 import { Providers } from "@/components/providers";
+import { DetailDateNormalizer } from "@/components/detail-date-normalizer";
 import "./globals.css";
 import "./responsive.css";
 import "./evolution.css";
@@ -32,6 +33,7 @@ export default function RootLayout({ children }: Readonly<{ children: React.Reac
     <html lang="es">
       <body>
         <Providers>{children}</Providers>
+        <DetailDateNormalizer />
       </body>
     </html>
   );

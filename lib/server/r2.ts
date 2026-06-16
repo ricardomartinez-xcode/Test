@@ -7,6 +7,23 @@ function required(name: string) {
   return value;
 }
 
+function normalizeBaseUrl(value: string | undefined | null) {
+  const raw = value?.trim() ?? "";
+  if (!raw) return "";
+
+  const withProtocol = /^https?:\/\//i.test(raw) ? raw : `https://${raw}`;
+
+  try {
+    const url = new URL(withProtocol);
+    url.pathname = url.pathname.replace(/\/+$/, "");
+    url.search = "";
+    url.hash = "";
+    return url.toString().replace(/\/$/, "");
+  } catch {
+    return withProtocol.replace(/\/+$/, "");
+  }
+}
+
 export function hasR2Config() {
   const { endpoint } = getR2EndpointConfig();
   return Boolean(
@@ -40,12 +57,14 @@ export function getR2BucketName() {
 }
 
 export function getR2PublicBaseUrl() {
-  return (
+  return normalizeBaseUrl(
     process.env.CLOUDFLARE_R2_PUBLIC_BASE_URL ||
-    process.env.NEXT_PUBLIC_R2_PUBLIC_BASE_URL ||
-    process.env.NEXT_PUBLIC_CLOUDFLARE_R2_PUBLIC_BASE_URL ||
-    ""
-  ).trim().replace(/\/$/, "");
+      process.env.CLOUDFLARE_R2_PUBLIC_DOMAIN ||
+      process.env.NEXT_PUBLIC_R2_PUBLIC_BASE_URL ||
+      process.env.NEXT_PUBLIC_R2_PUBLIC_DOMAIN ||
+      process.env.NEXT_PUBLIC_CLOUDFLARE_R2_PUBLIC_BASE_URL ||
+      "",
+  );
 }
 
 export function encodeR2Key(key: string) {
