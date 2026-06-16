@@ -1,4 +1,5 @@
 import { NextResponse } from "next/server";
+import { createPublicR2Url } from "@/lib/server/r2";
 import { createSupabaseServerClient } from "@/lib/supabase/server";
 
 type SectionRow = {
@@ -33,33 +34,16 @@ function firstSection(value: MaterialRow["material_sections"]): SectionRow | nul
   return value ?? null;
 }
 
-function getPublicR2BaseUrl() {
-  return (
-    process.env.NEXT_PUBLIC_R2_PUBLIC_BASE_URL ||
-    process.env.NEXT_PUBLIC_CLOUDFLARE_R2_PUBLIC_BASE_URL ||
-    process.env.CLOUDFLARE_R2_PUBLIC_BASE_URL ||
-    ""
-  ).replace(/\/$/, "");
-}
-
-function encodeR2Key(key: string) {
-  return key
-    .split("/")
-    .map((segment) => encodeURIComponent(segment))
-    .join("/");
-}
-
 function withR2Urls(row: MaterialRow) {
-  const publicBaseUrl = getPublicR2BaseUrl();
-  const publicR2Url = row.r2_key && publicBaseUrl ? `${publicBaseUrl}/${encodeR2Key(row.r2_key)}` : null;
+  const publicR2Url = createPublicR2Url(row.r2_key);
   const signedPreviewUrl = row.r2_key ? `/api/materials/${row.id}/file?mode=preview` : null;
   const signedDownloadUrl = row.r2_key ? `/api/materials/${row.id}/file?mode=download` : null;
 
   return {
     ...row,
     provider: row.r2_key ? "r2" : row.provider,
-    public_url: signedDownloadUrl ?? publicR2Url,
-    preview_url: signedPreviewUrl ?? publicR2Url,
+    public_url: publicR2Url ?? signedDownloadUrl,
+    preview_url: publicR2Url ?? signedPreviewUrl,
     source_url: publicR2Url ?? signedDownloadUrl,
     thumbnail_url: null,
     section: firstSection(row.material_sections),

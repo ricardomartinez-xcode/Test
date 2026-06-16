@@ -1,5 +1,5 @@
 import { NextResponse } from "next/server";
-import { createR2ReadUrl, hasR2Config } from "@/lib/server/r2";
+import { createPublicR2Url, createR2ReadUrl, hasR2Config } from "@/lib/server/r2";
 import { createSupabaseServerClient } from "@/lib/supabase/server";
 
 type RouteContext = { params: Promise<{ id: string }> };
@@ -18,10 +18,6 @@ export async function GET(request: Request, context: RouteContext) {
   const requestUrl = new URL(request.url);
   const mode = requestUrl.searchParams.get("mode") === "download" ? "download" : "preview";
 
-  if (!hasR2Config()) {
-    return NextResponse.json({ error: "R2 no está configurado para lectura." }, { status: 501 });
-  }
-
   const supabase = await createSupabaseServerClient();
   const { data, error } = await supabase
     .from("materials")
@@ -33,6 +29,12 @@ export async function GET(request: Request, context: RouteContext) {
   if (!data) return NextResponse.json({ error: "Material no encontrado." }, { status: 404 });
   if (!data.r2_key) return NextResponse.json({ error: "Este material no tiene asset R2 asociado." }, { status: 404 });
 
+  const publicUrl = createPublicR2Url(data.r2_key);
+  if (!hasR2Config()) {
+    if (publicUrl) return NextResponse.redirect(publicUrl, { status: 302 });
+    return NextResponse.json({ error: "R2 no está configurado para lectura." }, { status: 501 });
+  }
+
   try {
     const signedUrl = await createR2ReadUrl({
       key: data.r2_key,
@@ -43,6 +45,7 @@ export async function GET(request: Request, context: RouteContext) {
 
     return NextResponse.redirect(signedUrl, { status: 302 });
   } catch (signError) {
+    if (publicUrl) return NextResponse.redirect(publicUrl, { status: 302 });
     return NextResponse.json(
       { error: signError instanceof Error ? signError.message : "No se pudo firmar el documento R2." },
       { status: 500 },

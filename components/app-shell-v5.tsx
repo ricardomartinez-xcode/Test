@@ -2,19 +2,28 @@
 
 import { useEffect, useMemo, useState, type CSSProperties } from "react";
 import {
+  ArrowLeft,
   CalendarDays,
+  CalendarClock,
   Check,
   CheckCircle2,
+  ClipboardCheck,
+  Clock,
+  Edit3,
   ExternalLink,
+  FileCheck2,
   FolderOpen,
   ListTodo,
   LogOut,
   Menu,
+  Plus,
   RefreshCw,
   Search,
   Settings,
   SlidersHorizontal,
+  Trash2,
   Users,
+  X,
 } from "lucide-react";
 import { AdminHub } from "@/components/admin-hub";
 import { MaterialLibrary } from "@/components/material-library";
@@ -24,8 +33,9 @@ import { createSupabaseBrowserClient, hasSupabaseBrowserConfig } from "@/lib/sup
 import { calculateDaysRemaining, deriveReaderVisibility, deriveStatus, sortTasks } from "@/lib/task-utils";
 
 type SupabaseBrowser = NonNullable<ReturnType<typeof createSupabaseBrowserClient>>;
-type Tab = "calendar" | "tasks" | "materials" | "completed" | "group" | "admin" | "prefs";
+type Tab = "calendar" | "tasks" | "materials" | "completed" | "group" | "admin" | "prefs" | "taskDetail";
 type CardSize = "compact" | "medium" | "large";
+type DetailOrigin = Exclude<Tab, "taskDetail">;
 
 type Props = {
   initialTasks: Task[];
@@ -75,6 +85,20 @@ type SectionConfig = {
   active: boolean;
 };
 
+type CustomGroupColumn = {
+  id: string;
+  label: string;
+};
+
+type BooleanGroupColumn = {
+  id: string;
+  label: string;
+  source?: "attended" | "licenseIssue" | "authIssue";
+  fixed?: boolean;
+};
+
+type GroupValueStore = Record<string, Record<string, boolean>>;
+
 const fallbackPrefs: UserPreferences = {
   calendarView: "month",
   taskDensity: "medium",
@@ -102,9 +126,17 @@ const demoCourses: CourseConfig[] = [
 ];
 
 const demoSections: SectionConfig[] = [
-  { id: "clase", name: "Materiales de clase", path: "Psicología/Materiales de clase", color: "#2f77d0", icon: "folder", cardSize: "medium", previewStyle: "thumbnail", active: true },
-  { id: "apa", name: "APA e investigación", path: "Psicología/Materiales de clase/APA e investigación", color: "#7c3aed", icon: "file", cardSize: "medium", previewStyle: "thumbnail", active: true },
-  { id: "clinica", name: "Psicología clínica", path: "Psicología/Materiales de clase/Psicología clínica", color: "#0f9f8f", icon: "file", cardSize: "medium", previewStyle: "thumbnail", active: true },
+  { id: "conducta", name: "Alteraciones de la conducta", path: "Alteraciones de la conducta", color: "#dc2626", icon: "folder", cardSize: "medium", previewStyle: "thumbnail", active: true },
+  { id: "compendio", name: "Compendio de Psicologia", path: "Compendio de Psicologia", color: "#2f77d0", icon: "folder", cardSize: "medium", previewStyle: "thumbnail", active: true },
+  { id: "evaluacion", name: "Evaluacion Psicológica I", path: "Evaluacion Psicológica I", color: "#7c3aed", icon: "folder", cardSize: "medium", previewStyle: "thumbnail", active: true },
+  { id: "grupales", name: "Procesos Grupales", path: "Procesos Grupales", color: "#0f9f8f", icon: "folder", cardSize: "medium", previewStyle: "thumbnail", active: true },
+  { id: "aprendizaje", name: "Teorias del Aprendizaje", path: "Teorias del Aprendizaje", color: "#d97706", icon: "folder", cardSize: "medium", previewStyle: "thumbnail", active: true },
+];
+
+const fixedBooleanColumns: BooleanGroupColumn[] = [
+  { id: "attended", label: "Asistencia", source: "attended", fixed: true },
+  { id: "licenseIssue", label: "Licencia", source: "licenseIssue", fixed: true },
+  { id: "authIssue", label: "Acceso", source: "authIssue", fixed: true },
 ];
 
 export function AppShellV5({ initialTasks, initialMembers }: Props) {
@@ -122,6 +154,7 @@ export function AppShellV5({ initialTasks, initialMembers }: Props) {
   const [sections, setSections] = useState<SectionConfig[]>(hasSupabaseConfig ? [] : demoSections);
   const [cursor, setCursor] = useState(new Date());
   const [selectedTaskId, setSelectedTaskId] = useState<string | null>(initialTasks[0]?.id ?? null);
+  const [detailOrigin, setDetailOrigin] = useState<DetailOrigin>("calendar");
 
   const prefs = profile?.preferences ?? fallbackPrefs;
   const role: Role = profile?.role === "admin" || profile?.role === "owner" ? "admin" : "reader";
@@ -244,12 +277,26 @@ export function AppShellV5({ initialTasks, initialMembers }: Props) {
   const completedTasks = sortTasks(normalizedTasks.filter((task) => task.status === "Entregado"));
   const shownTasks = filterTasks(visibleTasks, query);
   const selectedTask = selectedTaskId
-    ? shownTasks.find((task) => task.id === selectedTaskId) ?? shownTasks[0] ?? null
+    ? normalizedTasks.find((task) => task.id === selectedTaskId) ?? shownTasks[0] ?? null
     : shownTasks[0] ?? null;
+  const calendarSelectedTask = selectedTaskId
+    ? visibleTasks.find((task) => task.id === selectedTaskId) ?? null
+    : null;
+  const listSelectedTask = selectedTaskId
+    ? shownTasks.find((task) => task.id === selectedTaskId) ?? null
+    : null;
+  const activeNavTab = tab === "taskDetail" ? detailOrigin : tab;
 
   function go(next: Tab) {
     if (["completed", "group", "admin"].includes(next) && role !== "admin") return;
     setTab(next);
+    setDrawerOpen(false);
+  }
+
+  function openTaskDetail(id: string, origin: DetailOrigin) {
+    setSelectedTaskId(id);
+    setDetailOrigin(origin);
+    setTab("taskDetail");
     setDrawerOpen(false);
   }
 
@@ -273,7 +320,7 @@ export function AppShellV5({ initialTasks, initialMembers }: Props) {
         open={drawerOpen}
         email={email ?? ""}
         role={role}
-        active={tab}
+        active={activeNavTab}
         sourceLabel={supabase ? "Supabase conectado" : "Demo local"}
         onClose={() => setDrawerOpen(false)}
         onSelect={go}
@@ -282,12 +329,13 @@ export function AppShellV5({ initialTasks, initialMembers }: Props) {
       {error ? <div className="systemBanner">{error}</div> : null}
 
       <section className="screen">
-        {tab === "calendar" ? <Calendar tasks={visibleTasks} cursor={cursor} setCursor={setCursor} selectedTask={selectedTask} onSelect={setSelectedTaskId} /> : null}
-        {tab === "tasks" ? <TaskList tasks={shownTasks} role={role} selectedTask={selectedTask} density={prefs.taskDensity} onSelect={setSelectedTaskId} onDone={(id) => void markDone(id)} /> : null}
+        {tab === "calendar" ? <Calendar tasks={visibleTasks} cursor={cursor} setCursor={setCursor} selectedTask={calendarSelectedTask} onSelect={(id) => openTaskDetail(id, "calendar")} /> : null}
+        {tab === "tasks" ? <TaskList tasks={shownTasks} role={role} selectedTask={listSelectedTask} density={prefs.taskDensity} onSelect={(id) => openTaskDetail(id, "tasks")} onDone={(id) => void markDone(id)} /> : null}
         {tab === "materials" ? <MaterialLibrary previewSize={prefs.materialPreviewSize} globalQuery={query} /> : null}
-        {tab === "completed" ? <TaskList tasks={completedTasks} role="reader" selectedTask={null} density={prefs.taskDensity} onSelect={() => undefined} onDone={() => undefined} completedOnly /> : null}
+        {tab === "completed" ? <TaskList tasks={completedTasks} role="reader" selectedTask={null} density={prefs.taskDensity} onSelect={(id) => openTaskDetail(id, "completed")} onDone={() => undefined} completedOnly /> : null}
         {tab === "group" ? <Group members={initialMembers} /> : null}
         {tab === "prefs" ? <Preferences profile={profile} supabase={supabase} onProfile={setProfile} onError={setError} /> : null}
+        {tab === "taskDetail" ? <TaskDetailScreen task={selectedTask} role={role} onBack={() => go(detailOrigin)} onDone={(id) => void markDone(id)} /> : null}
         {tab === "admin" ? (
           <AdminHub
             courses={courses}
@@ -302,12 +350,12 @@ export function AppShellV5({ initialTasks, initialMembers }: Props) {
       </section>
 
       <nav className={`bottomNav ${role === "admin" ? "adminBottomNav" : ""}`}>
-        <button className={tab === "calendar" ? "active" : ""} onClick={() => go("calendar")} type="button"><CalendarDays size={22} />Calendario</button>
-        <button className={tab === "tasks" ? "active" : ""} onClick={() => go("tasks")} type="button"><ListTodo size={22} />Tareas</button>
+        <button className={activeNavTab === "calendar" ? "active" : ""} onClick={() => go("calendar")} type="button"><CalendarDays size={22} />Calendario</button>
+        <button className={activeNavTab === "tasks" ? "active" : ""} onClick={() => go("tasks")} type="button"><ListTodo size={22} />Tareas</button>
         {role === "admin" ? (
-          <button className={tab === "admin" ? "active" : ""} onClick={() => go("admin")} type="button"><SlidersHorizontal size={22} />Admin</button>
+          <button className={activeNavTab === "admin" ? "active" : ""} onClick={() => go("admin")} type="button"><SlidersHorizontal size={22} />Admin</button>
         ) : null}
-        <button className={tab === "materials" ? "active" : ""} onClick={() => go("materials")} type="button"><FolderOpen size={22} />Materiales</button>
+        <button className={activeNavTab === "materials" ? "active" : ""} onClick={() => go("materials")} type="button"><FolderOpen size={22} />Materiales</button>
       </nav>
     </main>
   );
@@ -394,41 +442,69 @@ function Calendar({ tasks, cursor, setCursor, selectedTask, onSelect }: { tasks:
           })}
         </div>
       </section>
-      <TaskDetailPanel task={selectedTask} />
     </div>
   );
 }
 
-function TaskDetailPanel({ task }: { task: UiTask | null }) {
+function TaskDetailScreen({ task, role, onBack, onDone }: { task: UiTask | null; role: Role; onBack: () => void; onDone: (id: string) => void }) {
   if (!task) {
     return (
-      <aside className="taskDetailPanel empty">
+      <div className="taskDetailScreen empty">
         <CalendarDays size={24} />
         <strong>Sin actividades</strong>
-      </aside>
+        <button className="detailNavButton" onClick={onBack} type="button"><ArrowLeft size={17} />Volver</button>
+      </div>
     );
   }
 
+  const accent = task.taskTypeColor ?? task.courseColor ?? "#4285dc";
+  const dateTime = formatTaskDateTime(task.dueDate, task.dueTime);
+
   return (
-    <aside className="taskDetailPanel">
-      <div className="detailAccent" style={{ background: task.taskTypeColor ?? task.courseColor ?? "#4285dc" }} />
-      <div className="detailHeader">
-        <span>{task.deliveryType}</span>
-        <strong>{task.status}</strong>
+    <div className="taskDetailScreen">
+      <div className="detailToolbar">
+        <button className="detailNavButton" onClick={onBack} type="button"><ArrowLeft size={17} />Volver</button>
+        <div className="detailToolbarTitle">
+          <span>Detalle de actividad</span>
+          <strong>{task.title}</strong>
+        </div>
+        <div className="detailToolbarActions">
+          {task.materialUrl ? <a href={task.materialUrl} target="_blank" rel="noreferrer"><ExternalLink size={16} />Material</a> : null}
+          {task.platformUrl ? <a href={task.platformUrl} target="_blank" rel="noreferrer"><ExternalLink size={16} />Plataforma</a> : null}
+          {role === "admin" && task.status !== "Entregado" ? <button onClick={() => onDone(task.id)} type="button"><Check size={16} />Entregada</button> : null}
+        </div>
       </div>
-      <h3>{task.title}</h3>
-      <dl className="detailMeta">
-        <div><dt>Materia</dt><dd>{task.course}</dd></div>
-        <div><dt>Entrega</dt><dd>{task.dueDate} · {task.dueTime}</dd></div>
-        <div><dt>Días</dt><dd>{task.daysRemaining}</dd></div>
-      </dl>
-      {task.materialNeeded ? <p className="detailText">{task.materialNeeded}</p> : null}
-      {task.notes ? <p className="detailNote">{task.notes}</p> : null}
-      <div className="detailActions">
-        {task.materialUrl ? <a href={task.materialUrl} target="_blank" rel="noreferrer"><ExternalLink size={16} />Material</a> : null}
-        {task.platformUrl ? <a href={task.platformUrl} target="_blank" rel="noreferrer"><ExternalLink size={16} />Plataforma</a> : null}
-      </div>
-    </aside>
+      <section className="detailSheet" style={{ borderTopColor: accent } as CSSProperties}>
+        <div className="detailHero">
+          <span style={{ background: accent }}>{task.deliveryType}</span>
+          <h2>{task.title}</h2>
+        </div>
+        <dl className="detailGrid">
+          <DetailField label="Actividad / tarea" value={task.title} />
+          <DetailField label="Materia" value={task.course} />
+          <DetailField label="Fecha de entrega" value={dateTime} icon={<CalendarClock size={17} />} />
+          <DetailField label="Hora" value={formatTaskTime(task.dueTime)} icon={<Clock size={17} />} />
+          <DetailField label="Material necesario" value={task.materialNeeded || "Sin material indicado"} wide />
+          <DetailField label="Tipo de entrega" wide>
+            <span className="deliveryTypeLarge" style={{ color: accent }}><FileCheck2 size={28} />{task.deliveryType}</span>
+          </DetailField>
+          <DetailField label="Estado" value={task.status} icon={<ClipboardCheck size={17} />} />
+          <DetailField label="Días restantes" value={String(task.daysRemaining)} />
+          {task.notes ? <DetailField label="Notas" value={task.notes} wide /> : null}
+          {task.calendarEventId ? <DetailField label="Evento calendario" value={task.calendarEventId} /> : null}
+          {task.lastSync ? <DetailField label="Última sincronización" value={formatOptionalSync(task.lastSync)} /> : null}
+        </dl>
+      </section>
+    </div>
+  );
+}
+
+function DetailField({ label, value, icon, wide = false, children }: { label: string; value?: string; icon?: React.ReactNode; wide?: boolean; children?: React.ReactNode }) {
+  return (
+    <div className={`detailField ${wide ? "wide" : ""}`}>
+      <dt>{label}</dt>
+      <dd>{icon ? <span className="detailFieldIcon">{icon}</span> : null}{children ?? value}</dd>
+    </div>
   );
 }
 
@@ -450,7 +526,6 @@ function TaskList({
   onDone: (id: string) => void;
 }) {
   const grouped = groupTasks(tasks);
-  const detailTask = completedOnly ? null : selectedTask;
   return (
     <div className={`taskListWorkspace ${completedOnly ? "completedOnly" : ""}`}>
       <div className="listScreen">
@@ -478,18 +553,157 @@ function TaskList({
         })}
         {!tasks.length ? <section className="emptyLibrary"><strong>{completedOnly ? "Sin tareas entregadas" : "Sin tareas activas"}</strong><p>{completedOnly ? "Cuando marques una tarea como entregada aparecerá aquí." : "Las tareas entregadas se muestran solamente en Entregadas."}</p></section> : null}
       </div>
-      {!completedOnly ? <TaskDetailPanel task={detailTask} /> : null}
     </div>
   );
 }
 
 function Group({ members }: { members: GroupMember[] }) {
+  const [customColumns, setCustomColumns] = useState<CustomGroupColumn[]>([]);
+  const [values, setValues] = useState<GroupValueStore>({});
+  const [newColumnLabel, setNewColumnLabel] = useState("");
+  const [editingColumnId, setEditingColumnId] = useState<string | null>(null);
+  const [editingLabel, setEditingLabel] = useState("");
+  const [storageReady, setStorageReady] = useState(false);
+  const booleanColumns: BooleanGroupColumn[] = [...fixedBooleanColumns, ...customColumns.map((column) => ({ id: column.id, label: column.label }))];
+
+  useEffect(() => {
+    try {
+      const raw = window.localStorage.getItem("pscv-group-columns-v2");
+      if (raw) {
+        const parsed = JSON.parse(raw) as { columns?: CustomGroupColumn[]; values?: GroupValueStore };
+        setCustomColumns(Array.isArray(parsed.columns) ? parsed.columns.filter((column) => column.id && column.label) : []);
+        setValues(parsed.values && typeof parsed.values === "object" ? parsed.values : {});
+      }
+    } catch {
+      setCustomColumns([]);
+      setValues({});
+    } finally {
+      setStorageReady(true);
+    }
+  }, []);
+
+  useEffect(() => {
+    if (!storageReady) return;
+    window.localStorage.setItem("pscv-group-columns-v2", JSON.stringify({ columns: customColumns, values }));
+  }, [customColumns, values, storageReady]);
+
+  function addColumn() {
+    const label = newColumnLabel.trim();
+    if (!label) return;
+    setCustomColumns((columns) => [...columns, { id: `custom-${Date.now()}`, label }]);
+    setNewColumnLabel("");
+  }
+
+  function startEditing(column: CustomGroupColumn) {
+    setEditingColumnId(column.id);
+    setEditingLabel(column.label);
+  }
+
+  function saveColumnLabel(id: string) {
+    const label = editingLabel.trim();
+    if (label) {
+      setCustomColumns((columns) => columns.map((column) => column.id === id ? { ...column, label } : column));
+    }
+    setEditingColumnId(null);
+    setEditingLabel("");
+  }
+
+  function removeColumn(id: string) {
+    setCustomColumns((columns) => columns.filter((column) => column.id !== id));
+    setValues((current) => {
+      const next: GroupValueStore = {};
+      for (const [memberId, row] of Object.entries(current)) {
+        const nextRow = { ...row };
+        delete nextRow[id];
+        next[memberId] = nextRow;
+      }
+      return next;
+    });
+  }
+
+  function cellValue(member: GroupMember, column: BooleanGroupColumn) {
+    const override = values[member.controlNumber]?.[column.id];
+    if (override !== undefined) return override;
+    return column.source ? Boolean(member[column.source]) : false;
+  }
+
+  function toggleCell(member: GroupMember, column: BooleanGroupColumn) {
+    const nextValue = !cellValue(member, column);
+    setValues((current) => ({
+      ...current,
+      [member.controlNumber]: {
+        ...(current[member.controlNumber] ?? {}),
+        [column.id]: nextValue,
+      },
+    }));
+  }
+
   return (
-    <div className="tableWrap">
-      <table className="appTable memberTable">
-        <thead><tr><th>No. Control</th><th>Correo electrónico</th><th>Nombre completo</th></tr></thead>
-        <tbody>{members.map((member) => <tr key={member.controlNumber}><td>{member.controlNumber}</td><td>{member.email}</td><td>{member.fullName}</td></tr>)}</tbody>
-      </table>
+    <div className="groupScreen">
+      <section className="groupToolbar">
+        <div>
+          <strong>Lista de grupo</strong>
+          <span>{members.length} alumnos</span>
+        </div>
+        <label>
+          <input value={newColumnLabel} onChange={(event) => setNewColumnLabel(event.target.value)} onKeyDown={(event) => event.key === "Enter" ? addColumn() : undefined} placeholder="Nuevo encabezado" />
+          <button onClick={addColumn} type="button"><Plus size={16} />Columna</button>
+        </label>
+      </section>
+      <div className="tableWrap groupTableWrap">
+        <table className="appTable memberTable">
+          <thead>
+            <tr>
+              <th>No. Control</th>
+              <th>Correo electrónico</th>
+              <th>Nombre completo</th>
+              {booleanColumns.map((column) => (
+                <th className="booleanHeader" key={column.id}>
+                  {column.fixed ? (
+                    <span>{column.label}</span>
+                  ) : (
+                    <div className="groupColumnHeader">
+                      {editingColumnId === column.id ? (
+                        <input
+                          value={editingLabel}
+                          onChange={(event) => setEditingLabel(event.target.value)}
+                          onBlur={() => saveColumnLabel(column.id)}
+                          onKeyDown={(event) => event.key === "Enter" ? saveColumnLabel(column.id) : undefined}
+                          autoFocus
+                        />
+                      ) : (
+                        <span>{column.label}</span>
+                      )}
+                      <button aria-label={`Editar ${column.label}`} title="Editar encabezado" onClick={() => startEditing(column)} type="button"><Edit3 size={14} /></button>
+                      <button aria-label={`Eliminar ${column.label}`} title="Eliminar columna" onClick={() => removeColumn(column.id)} type="button"><Trash2 size={14} /></button>
+                    </div>
+                  )}
+                </th>
+              ))}
+            </tr>
+          </thead>
+          <tbody>
+            {members.map((member) => (
+              <tr key={member.controlNumber}>
+                <td>{member.controlNumber}</td>
+                <td>{member.email}</td>
+                <td>{member.fullName}</td>
+                {booleanColumns.map((column) => {
+                  const checked = cellValue(member, column);
+                  return (
+                    <td className="booleanCell" key={column.id}>
+                      <button className={`boolToggle ${checked ? "on" : ""}`} aria-pressed={checked} onClick={() => toggleCell(member, column)} type="button">
+                        {checked ? <Check size={14} /> : <X size={14} />}
+                        <span>{checked ? "Sí" : "No"}</span>
+                      </button>
+                    </td>
+                  );
+                })}
+              </tr>
+            ))}
+          </tbody>
+        </table>
+      </div>
     </div>
   );
 }
@@ -529,11 +743,30 @@ function Preferences({ profile, supabase, onProfile, onError }: { profile: Profi
 }
 
 function titleFor(tab: Tab) {
-  return tab === "calendar" ? "Calendario" : tab === "tasks" ? "Tareas" : tab === "materials" ? "Materiales" : tab === "completed" ? "Entregadas" : tab === "group" ? "Lista de grupo" : tab === "prefs" ? "Preferencias" : "Configuración";
+  return tab === "calendar" ? "Calendario" : tab === "tasks" ? "Tareas" : tab === "materials" ? "Materiales" : tab === "completed" ? "Entregadas" : tab === "group" ? "Lista de grupo" : tab === "prefs" ? "Preferencias" : tab === "taskDetail" ? "Detalle de tarea" : "Configuración";
 }
 function monthCells(year: number, month: number) { const first = new Date(year, month, 1).getDay(); const total = new Date(year, month + 1, 0).getDate(); const cells: Array<number | null> = Array(first).fill(null).concat(Array.from({ length: total }, (_, index) => index + 1)); while (cells.length % 7 !== 0) cells.push(null); return cells; }
 function groupTasks(tasks: UiTask[]) { const map = new Map<DeliveryType, UiTask[]>(); tasks.forEach((task) => map.set(task.deliveryType, [...(map.get(task.deliveryType) ?? []), task])); return map; }
 function filterTasks(tasks: UiTask[], query: string) { const q = query.toLowerCase().trim(); return q ? tasks.filter((task) => [task.title, task.course, task.materialNeeded, task.notes].some((value) => value?.toLowerCase().includes(q))) : tasks; }
+function formatTaskTime(value: string) { return value.slice(0, 5); }
+function formatTaskDateTime(date: string, time: string) {
+  const [year, month, day] = date.split("-");
+  if (!year || !month || !day) return `${date} ${formatTaskTime(time)}`.trim();
+  return `${day.padStart(2, "0")}/${month.padStart(2, "0")}/${year} ${formatTaskTime(time)}`;
+}
+function formatOptionalSync(value: string) {
+  const date = new Date(value);
+  if (Number.isNaN(date.getTime())) return value;
+  const parts = new Intl.DateTimeFormat("es-MX", {
+    day: "2-digit",
+    month: "2-digit",
+    year: "numeric",
+    hour: "2-digit",
+    minute: "2-digit",
+    hour12: false,
+  }).format(date);
+  return parts.replace(",", "");
+}
 function asOne<T>(value: T | T[] | null | undefined): T | null { return Array.isArray(value) ? value[0] ?? null : value ?? null; }
 function cardSize(value: unknown): CardSize { return value === "compact" || value === "large" ? value : "medium"; }
 function delivery(value: unknown): DeliveryType { const text = String(value ?? "Tarea"); return deliveryTypes.includes(text as DeliveryType) ? text as DeliveryType : "Tarea"; }

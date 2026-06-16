@@ -712,3 +712,506 @@ a svg {
     grid-template-columns: 1fr;
   }
 }
+
+/* Detail screens, group columns, and denser final scale. */
+.mobileApp {
+  width: min(100vw, 1400px);
+  max-width: 1400px;
+}
+
+.bottomNav {
+  width: min(100vw, 1400px);
+}
+
+.screen {
+  min-height: calc(100dvh - 116px);
+}
+
+.calendarWorkspace,
+.taskListWorkspace {
+  grid-template-columns: 1fr;
+  padding: 10px;
+  gap: 10px;
+}
+
+.calendarPane .dayCell,
+.dayCell {
+  min-height: clamp(82px, 12.5vh, 122px);
+}
+
+.calendarEvent {
+  min-height: 26px;
+  padding: 4px 5px;
+}
+
+.calendarEvent span {
+  font-size: 9px;
+}
+
+.calendarEvent strong {
+  font-size: 10px;
+}
+
+.groupTitle,
+.plainGroupTitle {
+  min-height: 38px;
+  padding: 7px 12px;
+  font-size: 16px;
+}
+
+.dataRow {
+  min-height: 58px;
+  padding: 8px 12px;
+}
+
+.rowMain strong,
+.rowMain span {
+  font-size: 14px;
+}
+
+.rowDue {
+  font-size: 11px;
+}
+
+.days {
+  padding: 3px 6px;
+  font-size: 11px;
+}
+
+.openIcon,
+.miniAction {
+  width: 30px;
+  height: 30px;
+}
+
+.taskDetailScreen {
+  min-height: calc(100dvh - 116px);
+  display: grid;
+  gap: 10px;
+  align-content: start;
+  padding: 10px;
+  background: #f5f7fb;
+}
+
+.taskDetailScreen.empty {
+  place-items: center;
+  align-content: center;
+  color: #667085;
+}
+
+.detailToolbar {
+  display: grid;
+  grid-template-columns: auto minmax(0, 1fr) auto;
+  align-items: center;
+  gap: 10px;
+  width: 100%;
+  max-width: 1120px;
+  margin: 0 auto;
+}
+
+.detailNavButton,
+.detailToolbarActions a,
+.detailToolbarActions button,
+.groupToolbar button,
+.groupColumnHeader button {
+  min-height: 34px;
+  border: 1px solid #d0d7e2;
+  border-radius: 8px;
+  background: #fff;
+  color: #1f4f86;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 7px;
+  padding: 0 10px;
+  font-size: 13px;
+  font-weight: 800;
+  text-decoration: none;
+  cursor: pointer;
+}
+
+.detailToolbarTitle {
+  min-width: 0;
+  display: grid;
+  gap: 2px;
+}
+
+.detailToolbarTitle span {
+  color: #667085;
+  font-size: 11px;
+  font-weight: 800;
+  text-transform: uppercase;
+}
+
+.detailToolbarTitle strong {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  color: #111827;
+  font-size: 17px;
+}
+
+.detailToolbarActions {
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: flex-end;
+  gap: 7px;
+}
+
+.detailSheet {
+  width: 100%;
+  max-width: 1120px;
+  margin: 0 auto;
+  border: 1px solid #d8e0ea;
+  border-top: 5px solid #4285dc;
+  border-radius: 8px;
+  background: #fff;
+  padding: 18px;
+  box-shadow: 0 12px 28px rgba(15, 23, 42, 0.05);
+}
+
+.detailHero {
+  display: grid;
+  gap: 10px;
+  margin-bottom: 16px;
+}
+
+.detailHero span {
+  width: max-content;
+  max-width: 100%;
+  border-radius: 999px;
+  color: #fff;
+  padding: 5px 9px;
+  font-size: 12px;
+  font-weight: 900;
+}
+
+.detailHero h2 {
+  margin: 0;
+  color: #111827;
+  font-size: clamp(22px, 3vw, 34px);
+  line-height: 1.06;
+  letter-spacing: 0;
+  overflow-wrap: anywhere;
+}
+
+.detailGrid {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 10px;
+  margin: 0;
+}
+
+.detailField {
+  min-width: 0;
+  display: grid;
+  gap: 5px;
+  border: 1px solid #e2e8f0;
+  border-radius: 8px;
+  background: #fbfdff;
+  padding: 11px 12px;
+}
+
+.detailField.wide {
+  grid-column: 1 / -1;
+}
+
+.detailField dt {
+  color: #667085;
+  font-size: 12px;
+  font-weight: 800;
+}
+
+.detailField dd {
+  min-width: 0;
+  margin: 0;
+  color: #111827;
+  display: flex;
+  align-items: center;
+  gap: 7px;
+  font-size: 15px;
+  font-weight: 700;
+  line-height: 1.35;
+  overflow-wrap: anywhere;
+}
+
+.detailFieldIcon {
+  color: #d97706;
+  display: inline-grid;
+  place-items: center;
+}
+
+.deliveryTypeLarge {
+  display: inline-flex;
+  align-items: center;
+  gap: 9px;
+  font-size: 22px;
+  font-weight: 900;
+}
+
+.groupScreen {
+  min-height: calc(100dvh - 116px);
+  display: grid;
+  align-content: start;
+  gap: 10px;
+  padding: 10px;
+  background: #f5f7fb;
+}
+
+.groupToolbar {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) minmax(260px, auto);
+  align-items: center;
+  gap: 10px;
+  border: 1px solid #d8e0ea;
+  border-radius: 8px;
+  background: #fff;
+  padding: 10px;
+}
+
+.groupToolbar div {
+  min-width: 0;
+  display: grid;
+  gap: 2px;
+}
+
+.groupToolbar strong {
+  color: #111827;
+  font-size: 17px;
+}
+
+.groupToolbar span {
+  color: #667085;
+  font-size: 12px;
+  font-weight: 700;
+}
+
+.groupToolbar label {
+  min-width: 0;
+  display: flex;
+  gap: 8px;
+}
+
+.groupToolbar input,
+.groupColumnHeader input {
+  min-width: 0;
+  height: 34px;
+  border: 1px solid #d0d7e2;
+  border-radius: 8px;
+  padding: 0 10px;
+  font-size: 13px;
+}
+
+.groupTableWrap {
+  border: 1px solid #d8e0ea;
+  border-radius: 8px;
+}
+
+.memberTable {
+  width: max-content;
+  min-width: 100%;
+  table-layout: fixed;
+}
+
+.memberTable th,
+.memberTable td {
+  min-width: 0;
+  height: 38px;
+  padding: 0 10px;
+  font-size: 13px;
+}
+
+.memberTable th:nth-child(1),
+.memberTable td:nth-child(1) {
+  width: 96px;
+}
+
+.memberTable th:nth-child(2),
+.memberTable td:nth-child(2) {
+  width: 260px;
+}
+
+.memberTable th:nth-child(3),
+.memberTable td:nth-child(3) {
+  width: 300px;
+}
+
+.memberTable .booleanHeader,
+.memberTable .booleanCell {
+  width: 112px;
+  text-align: center;
+}
+
+.groupColumnHeader {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) 28px 28px;
+  align-items: center;
+  gap: 5px;
+}
+
+.groupColumnHeader span {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.groupColumnHeader button {
+  min-height: 28px;
+  width: 28px;
+  padding: 0;
+  font-size: 0;
+}
+
+.boolToggle {
+  min-width: 58px;
+  height: 28px;
+  border: 1px solid #d0d7e2;
+  border-radius: 999px;
+  background: #fff;
+  color: #667085;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 5px;
+  padding: 0 8px;
+  font-size: 12px;
+  font-weight: 900;
+  cursor: pointer;
+}
+
+.boolToggle.on {
+  border-color: #86d39a;
+  background: #ecfdf3;
+  color: #16803d;
+}
+
+@media (min-width: 900px) {
+  .mobileApp,
+  .bottomNav {
+    width: min(calc(100vw - 16px), 1400px);
+    max-width: 1400px;
+  }
+
+  .topAppBar {
+    height: 52px;
+  }
+
+  .bottomNav {
+    height: 58px;
+  }
+}
+
+@media (max-width: 720px) {
+  .detailToolbar,
+  .groupToolbar {
+    grid-template-columns: 1fr;
+  }
+
+  .detailToolbarActions {
+    justify-content: flex-start;
+  }
+
+  .detailGrid {
+    grid-template-columns: 1fr;
+  }
+
+  .detailSheet {
+    padding: 12px;
+  }
+
+  .memberTable th,
+  .memberTable td {
+    height: 34px;
+    padding: 0 8px;
+    font-size: 12px;
+  }
+
+  .memberTable th:nth-child(1),
+  .memberTable td:nth-child(1) {
+    width: 82px;
+  }
+
+  .memberTable th:nth-child(2),
+  .memberTable td:nth-child(2) {
+    width: 220px;
+  }
+
+  .memberTable th:nth-child(3),
+  .memberTable td:nth-child(3) {
+    width: 240px;
+  }
+
+  .memberTable .booleanHeader,
+  .memberTable .booleanCell {
+    width: 96px;
+  }
+}
+
+@media (max-width: 620px) {
+  .screen,
+  .taskDetailScreen,
+  .groupScreen {
+    min-height: calc(100dvh - 108px);
+  }
+
+  .topAppBar {
+    height: 50px;
+  }
+
+  .barTitle {
+    font-size: 16px;
+  }
+
+  .bottomNav {
+    height: 58px;
+  }
+
+  .calendarWorkspace,
+  .taskListWorkspace,
+  .taskDetailScreen,
+  .groupScreen {
+    padding: 8px;
+  }
+
+  .calendarPane .dayCell,
+  .dayCell {
+    min-height: 78px;
+  }
+
+  .calendarEvent {
+    grid-template-columns: 1fr;
+    min-height: 24px;
+  }
+
+  .dataRow {
+    min-height: 54px;
+    padding: 7px 10px;
+  }
+
+  .rowMain strong,
+  .rowMain span {
+    font-size: 13px;
+  }
+
+  .detailToolbarTitle strong {
+    font-size: 15px;
+  }
+
+  .detailHero h2 {
+    font-size: 22px;
+  }
+
+  .detailField {
+    padding: 9px 10px;
+  }
+
+  .detailField dd {
+    font-size: 14px;
+  }
+
+  .deliveryTypeLarge {
+    font-size: 19px;
+  }
+}

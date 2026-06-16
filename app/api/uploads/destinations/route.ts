@@ -1,5 +1,5 @@
 import { NextResponse } from "next/server";
-import { MATERIALS_R2_ROOT } from "@/lib/server/r2-paths";
+import { DEFAULT_R2_FOLDER_DESTINATIONS, MATERIALS_R2_ROOT } from "@/lib/server/r2-paths";
 import { hasR2Config, listR2FolderPrefixes } from "@/lib/server/r2";
 import { createSupabaseServerClient } from "@/lib/supabase/server";
 
@@ -20,6 +20,16 @@ function destinationKey(path: string) {
 
 export async function GET() {
   const destinations = new Map<string, { id: string; sectionId: string | null; name: string; path: string; source: "supabase" | "r2" }>();
+
+  for (const path of DEFAULT_R2_FOLDER_DESTINATIONS) {
+    destinations.set(destinationKey(path), {
+      id: `r2:${path}`,
+      sectionId: null,
+      name: labelFromPath(path),
+      path,
+      source: "r2",
+    });
+  }
 
   try {
     const supabase = await createSupabaseServerClient();

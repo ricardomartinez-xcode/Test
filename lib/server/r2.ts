@@ -8,18 +8,64 @@ function required(name: string) {
 }
 
 export function hasR2Config() {
+  const { endpoint } = getR2EndpointConfig();
   return Boolean(
-    process.env.CLOUDFLARE_R2_ENDPOINT &&
+    endpoint &&
       process.env.CLOUDFLARE_R2_ACCESS_KEY_ID &&
       process.env.CLOUDFLARE_R2_SECRET_ACCESS_KEY &&
-      process.env.CLOUDFLARE_R2_BUCKET,
+      getR2BucketName(),
   );
 }
 
+export function getR2EndpointConfig() {
+  const raw = process.env.CLOUDFLARE_R2_ENDPOINT?.trim() ?? "";
+  if (!raw) return { endpoint: "", bucketFromEndpoint: "" };
+
+  try {
+    const url = new URL(raw);
+    const bucketFromEndpoint = url.pathname.split("/").filter(Boolean)[0] ?? "";
+    url.pathname = "";
+    url.search = "";
+    url.hash = "";
+    return { endpoint: url.toString().replace(/\/$/, ""), bucketFromEndpoint };
+  } catch {
+    return { endpoint: raw.replace(/\/+$/, ""), bucketFromEndpoint: "" };
+  }
+}
+
+export function getR2BucketName() {
+  const configuredBucket = process.env.CLOUDFLARE_R2_BUCKET?.trim();
+  if (configuredBucket) return configuredBucket;
+  return getR2EndpointConfig().bucketFromEndpoint;
+}
+
+export function getR2PublicBaseUrl() {
+  return (
+    process.env.CLOUDFLARE_R2_PUBLIC_BASE_URL ||
+    process.env.NEXT_PUBLIC_R2_PUBLIC_BASE_URL ||
+    process.env.NEXT_PUBLIC_CLOUDFLARE_R2_PUBLIC_BASE_URL ||
+    ""
+  ).trim().replace(/\/$/, "");
+}
+
+export function encodeR2Key(key: string) {
+  return key
+    .split("/")
+    .map((segment) => encodeURIComponent(segment))
+    .join("/");
+}
+
+export function createPublicR2Url(key: string | null | undefined) {
+  const publicBaseUrl = getR2PublicBaseUrl();
+  return key && publicBaseUrl ? `${publicBaseUrl}/${encodeR2Key(key)}` : null;
+}
+
 export function getR2Client() {
+  const { endpoint } = getR2EndpointConfig();
+  if (!endpoint) throw new Error("Missing env var: CLOUDFLARE_R2_ENDPOINT");
   return new S3Client({
     region: "auto",
-    endpoint: required("CLOUDFLARE_R2_ENDPOINT"),
+    endpoint,
     credentials: {
       accessKeyId: required("CLOUDFLARE_R2_ACCESS_KEY_ID"),
       secretAccessKey: required("CLOUDFLARE_R2_SECRET_ACCESS_KEY"),
@@ -28,7 +74,8 @@ export function getR2Client() {
 }
 
 export async function createUploadUrl(input: { key: string; contentType: string }) {
-  const bucket = required("CLOUDFLARE_R2_BUCKET");
+  const bucket = getR2BucketName();
+  if (!bucket) throw new Error("Missing env var: CLOUDFLARE_R2_BUCKET");
   const client = getR2Client();
   const command = new PutObjectCommand({
     Bucket: bucket,
@@ -36,11 +83,10 @@ export async function createUploadUrl(input: { key: string; contentType: string 
     ContentType: input.contentType,
   });
   const uploadUrl = await getSignedUrl(client, command, { expiresIn: 60 * 5 });
-  const publicBaseUrl = process.env.CLOUDFLARE_R2_PUBLIC_BASE_URL;
   return {
     key: input.key,
     uploadUrl,
-    publicUrl: publicBaseUrl ? `${publicBaseUrl.replace(/\/$/, "")}/${input.key}` : null,
+    publicUrl: createPublicR2Url(input.key),
     expiresIn: 300,
   };
 }
@@ -51,7 +97,8 @@ export async function createR2ReadUrl(input: {
   contentType?: string | null;
   disposition?: "inline" | "attachment";
 }) {
-  const bucket = required("CLOUDFLARE_R2_BUCKET");
+  const bucket = getR2BucketName();
+  if (!bucket) throw new Error("Missing env var: CLOUDFLARE_R2_BUCKET");
   const client = getR2Client();
   const fileName = input.fileName?.trim() || input.key.split("/").pop() || "material";
   const encodedFileName = encodeURIComponent(fileName);
@@ -66,11 +113,12 @@ export async function createR2ReadUrl(input: {
 }
 
 export async function listR2FolderPrefixes(input: { root: string }) {
-  const bucket = required("CLOUDFLARE_R2_BUCKET");
+  const bucket = getR2BucketName();
+  if (!bucket) throw new Error("Missing env var: CLOUDFLARE_R2_BUCKET");
   const client = getR2Client();
-  const rootPrefix = input.root.replace(/\/$/, "");
-  const queue = [`${rootPrefix}/`];
-  const seen = new Set<string>([rootPrefix]);
+  const rootPrefix = input.root.trim().replace(/\\/g, "/").replace(/\/$/, "");
+  const queue = [rootPrefix ? `${rootPrefix}/` : ""];
+  const seen = new Set<string>(rootPrefix ? [rootPrefix] : []);
 
   while (queue.length) {
     const prefix = queue.shift()!;

@@ -1,4 +1,11 @@
-export const MATERIALS_R2_ROOT = "Psicología/Materiales de clase";
+export const MATERIALS_R2_ROOT = "";
+export const DEFAULT_R2_FOLDER_DESTINATIONS = [
+  "Alteraciones de la conducta",
+  "Compendio de Psicologia",
+  "Evaluacion Psicológica I",
+  "Procesos Grupales",
+  "Teorias del Aprendizaje",
+];
 
 function cleanPath(value: string) {
   return value
@@ -14,6 +21,7 @@ function cleanPath(value: string) {
 function stripKnownRoot(value: string) {
   const path = cleanPath(value);
   const root = cleanPath(MATERIALS_R2_ROOT);
+  if (!root) return path;
   const rootWithoutFirstSegment = root.split("/").slice(1).join("/");
 
   if (path === root) return "";
@@ -36,5 +44,7 @@ function safeFileName(value: string) {
 export function buildMaterialR2Key(input: { fileName: string; sectionPath?: string | null }) {
   const relativeSection = stripKnownRoot(input.sectionPath ?? "") || "General";
   const filename = safeFileName(input.fileName) || `material-${Date.now()}`;
-  return `${MATERIALS_R2_ROOT}/${relativeSection}/${new Date().getFullYear()}/${crypto.randomUUID()}-${filename}`;
+  return [cleanPath(MATERIALS_R2_ROOT), relativeSection, String(new Date().getFullYear()), `${crypto.randomUUID()}-${filename}`]
+    .filter(Boolean)
+    .join("/");
 }
