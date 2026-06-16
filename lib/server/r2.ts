@@ -2,6 +2,13 @@ import { GetObjectCommand, HeadObjectCommand, ListObjectsV2Command, PutObjectCom
 import { getSignedUrl } from "@aws-sdk/s3-request-presigner";
 import { MATERIALS_R2_ROOT, normalizeMaterialR2Key } from "@/lib/server/r2-paths";
 
+export type R2ListedObject = {
+  key: string;
+  size: number;
+  lastModified: Date | null;
+  etag: string | null;
+};
+
 function required(name: string) {
   const value = process.env[name];
   if (!value) throw new Error(`Missing env var: ${name}`);
@@ -129,6 +136,42 @@ export function getR2Client() {
       secretAccessKey: required("CLOUDFLARE_R2_SECRET_ACCESS_KEY"),
     },
   });
+}
+
+export async function listR2Objects(input: { root?: string; maxItems?: number } = {}) {
+  const bucket = getR2BucketName();
+  if (!bucket) throw new Error("Missing env var: CLOUDFLARE_R2_BUCKET");
+
+  const client = getR2Client();
+  const root = (input.root ?? MATERIALS_R2_ROOT).trim().replace(/\\/g, "/").replace(/^\/+|\/+$/g, "");
+  const prefix = root ? `${root}/` : "";
+  const maxItems = Math.max(1, Math.min(input.maxItems ?? 10000, 50000));
+  const objects: R2ListedObject[] = [];
+  let continuationToken: string | undefined;
+
+  do {
+    const response = await client.send(new ListObjectsV2Command({
+      Bucket: bucket,
+      Prefix: prefix,
+      ContinuationToken: continuationToken,
+      MaxKeys: Math.min(1000, maxItems - objects.length),
+    }));
+
+    for (const item of response.Contents ?? []) {
+      if (!item.Key || item.Key.endsWith("/")) continue;
+      objects.push({
+        key: item.Key,
+        size: item.Size ?? 0,
+        lastModified: item.LastModified ?? null,
+        etag: item.ETag ?? null,
+      });
+      if (objects.length >= maxItems) break;
+    }
+
+    continuationToken = response.IsTruncated && objects.length < maxItems ? response.NextContinuationToken : undefined;
+  } while (continuationToken && objects.length < maxItems);
+
+  return objects;
 }
 
 export async function r2ObjectExists(key: string) {
