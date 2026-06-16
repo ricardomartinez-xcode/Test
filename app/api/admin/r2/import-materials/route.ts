@@ -3,6 +3,9 @@ import { createPublicR2Url, getR2BucketName, listR2Objects, type R2ListedObject 
 import { MATERIALS_R2_ROOT } from "@/lib/server/r2-paths";
 import { createSupabaseServerClient } from "@/lib/supabase/server";
 
+type SupabaseServerClient = Awaited<ReturnType<typeof createSupabaseServerClient>>;
+type DbError = { message: string } | null;
+
 type ImportRequest = {
   dryRun?: boolean;
   root?: string;
@@ -130,20 +133,24 @@ function chunk<T>(items: T[], size: number) {
   return chunks;
 }
 
-async function assertAdmin(supabase: Awaited<ReturnType<typeof createSupabaseServerClient>>) {
-  const { data, error } = await supabase.rpc("is_admin");
+async function assertAdmin(supabase: SupabaseServerClient) {
+  const result = await supabase.rpc("is_admin");
+  const error = result.error as DbError;
   if (error) throw new Error(error.message);
-  if (!data) throw new Error("No autorizado. Solo administradores pueden importar materiales desde R2.");
+  if (!result.data) throw new Error("No autorizado. Solo administradores pueden importar materiales desde R2.");
 }
 
-async function loadSectionMap(supabase: Awaited<ReturnType<typeof createSupabaseServerClient>>) {
-  const { data, error } = await supabase.from("material_sections").select("id,path");
+async function loadSectionMap(supabase: SupabaseServerClient) {
+  const result = await supabase.from("material_sections").select("id,path");
+  const error = result.error as DbError;
   if (error) throw new Error(error.message);
-  return new Map((data ?? []).map((row: SectionRow) => [cleanPath(row.path), row.id]));
+
+  const rows = (result.data ?? []) as SectionRow[];
+  return new Map(rows.map((row) => [cleanPath(row.path), row.id]));
 }
 
 async function ensureSectionPath(
-  supabase: Awaited<ReturnType<typeof createSupabaseServerClient>>,
+  supabase: SupabaseServerClient,
   sectionMap: Map<string, string>,
   sectionPath: string,
 ) {
@@ -159,7 +166,7 @@ async function ensureSectionPath(
       continue;
     }
 
-    const { data, error } = await supabase
+    const insertResult = await supabase
       .from("material_sections")
       .insert({
         parent_id: parentId,
@@ -170,25 +177,32 @@ async function ensureSectionPath(
         sort_order: sectionMap.size,
       })
       .select("id,path")
-      .single<SectionRow>();
+      .single();
 
+    const error = insertResult.error as DbError;
     if (error) throw new Error(error.message);
-    sectionMap.set(cleanPath(data.path), data.id);
-    parentId = data.id;
+
+    const insertedSection = insertResult.data as SectionRow | null;
+    if (!insertedSection) throw new Error(`No se pudo crear la sección ${currentPath}.`);
+
+    sectionMap.set(cleanPath(insertedSection.path), insertedSection.id);
+    parentId = insertedSection.id;
   }
 
   return parentId;
 }
 
 async function loadExistingMaterials(
-  supabase: Awaited<ReturnType<typeof createSupabaseServerClient>>,
+  supabase: SupabaseServerClient,
   keys: string[],
 ) {
   const map = new Map<string, string>();
   for (const keysChunk of chunk(keys, 500)) {
-    const { data, error } = await supabase.from("materials").select("id,r2_key").in("r2_key", keysChunk);
+    const result = await supabase.from("materials").select("id,r2_key").in("r2_key", keysChunk);
+    const error = result.error as DbError;
     if (error) throw new Error(error.message);
-    for (const row of (data ?? []) as MaterialRow[]) {
+
+    for (const row of (result.data ?? []) as MaterialRow[]) {
       if (row.r2_key) map.set(row.r2_key, row.id);
     }
   }
@@ -196,14 +210,15 @@ async function loadExistingMaterials(
 }
 
 async function resetMaterials(
-  supabase: Awaited<ReturnType<typeof createSupabaseServerClient>>,
+  supabase: SupabaseServerClient,
   scope: "r2" | "all",
 ) {
   const query = supabase.from("materials").select("id");
-  const { data, error } = scope === "r2" ? await query.eq("provider", "r2") : await query;
+  const result = scope === "r2" ? await query.eq("provider", "r2") : await query;
+  const error = result.error as DbError;
   if (error) throw new Error(error.message);
 
-  const ids = ((data ?? []) as Array<{ id: string }>).map((row) => row.id);
+  const ids = ((result.data ?? []) as Array<{ id: string }>).map((row) => row.id);
   if (!ids.length) return 0;
 
   for (const idsChunk of chunk(ids, 500)) {
@@ -248,7 +263,7 @@ async function runImport(request: Request, fallbackBody: ImportRequest) {
     const sectionPaths = Array.from(new Set(objects.map((object) => object.sectionPath))).sort((a, b) => a.localeCompare(b, "es"));
 
     if (dryRun) {
-      return json({
+      return json {
         dryRun: true,
         bucket: getR2BucketName(),
         root,
