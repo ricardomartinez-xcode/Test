@@ -115,13 +115,13 @@ export function MaterialLibrary({ previewSize, globalQuery = "" }: MaterialLibra
     <div className={`libraryShell preview-${previewSize}`}>
       <section className="libraryHero">
         <div>
-          <p className="eyebrow">Biblioteca</p>
+          <p className="eyebrow">Biblioteca R2</p>
           <h2>{selectedSection ? selectedSection.name : "Materiales de clase"}</h2>
-          <p>{selectedSection ? selectedSection.path : "Explora carpetas, filtra por sección y abre materiales desde R2."}</p>
+          <p>{selectedSection ? selectedSection.path : "Explora carpetas, filtra por sección y abre assets directamente desde R2."}</p>
         </div>
         <div className="libraryStats">
           <strong>{data?.summary.materials ?? 0}</strong>
-          <span>materiales</span>
+          <span>assets R2</span>
         </div>
       </section>
 
@@ -151,9 +151,9 @@ export function MaterialLibrary({ previewSize, globalQuery = "" }: MaterialLibra
         <section className="sectionRail" aria-label="Secciones">
           {visibleSections.map((section) => (
             <button key={section.id} type="button" className="sectionCard" onClick={() => setSectionId(section.id)} style={{ borderColor: section.color ?? "#4285dc" }}>
-              <span className="sectionIcon" style={{ background: section.color ?? "#4285dc" }}>{section.icon?.slice(0, 2) ?? "📁"}</span>
+              <span className="sectionIcon" style={{ background: section.color ?? "#4285dc" }}>{section.icon?.slice(0, 2) ?? "R2"}</span>
               <strong>{section.name}</strong>
-              <small>{section.material_count} materiales</small>
+              <small>{section.material_count} assets</small>
             </button>
           ))}
         </section>
@@ -164,7 +164,7 @@ export function MaterialLibrary({ previewSize, globalQuery = "" }: MaterialLibra
 
       {!loading && !error && materials.length === 0 ? (
         <section className="emptyLibrary">
-          <strong>No encontré materiales</strong>
+          <strong>No encontré assets R2</strong>
           <p>Prueba con otro término o selecciona otra sección.</p>
         </section>
       ) : null}
@@ -183,28 +183,30 @@ export function MaterialLibrary({ previewSize, globalQuery = "" }: MaterialLibra
 function MaterialCard({ material, view }: { material: LibraryMaterial; view: "library" | "list" }) {
   const section = material.section;
   const color = section?.color ?? "#4285dc";
-  const url = material.public_url ?? material.source_url ?? material.preview_url ?? "#";
+  const previewUrl = material.r2_key ? `/api/materials/${material.id}/file?mode=preview` : null;
+  const openUrl = material.r2_key ? `/api/materials/${material.id}/file?mode=download` : null;
   const fileType = material.material_type ?? material.content_type?.split("/").at(-1)?.toUpperCase() ?? "PDF";
   const isPdf = (material.content_type ?? material.file_name ?? material.title).toLowerCase().includes("pdf");
   const size = formatBytes(material.size_bytes);
+  const path = material.r2_key ?? section?.path ?? material.file_name ?? "Sin ruta R2";
 
   return (
     <article className={`materialCardV2 ${view === "list" ? "list" : ""}`} style={{ borderColor: color }}>
-      <div className="materialThumb" style={{ background: `${color}16`, color }}>
-        {material.thumbnail_url ? <img src={material.thumbnail_url} alt="" /> : <span>{isPdf ? "PDF" : fileType.slice(0, 4)}</span>}
+      <div className="materialThumb" style={{ background: `${color}14`, color }} aria-hidden="true">
+        <span>{isPdf ? "PDF" : fileType.slice(0, 4)}</span>
       </div>
       <div className="materialContent">
         <div className="materialMetaLine">
           <span style={{ color }}>{section?.name ?? "Material"}</span>
-          <span>{material.provider ?? "r2"}</span>
+          <span>R2</span>
           {size ? <span>{size}</span> : null}
         </div>
-        <strong>{material.title}</strong>
-        <small>{material.r2_key ?? section?.path ?? material.file_name}</small>
+        <strong title={material.title}>{cleanTitle(material.title)}</strong>
+        <small title={path}>{path}</small>
       </div>
       <div className="materialActions">
-        {material.preview_url ? <a href={material.preview_url} target="_blank" rel="noreferrer">Preview</a> : null}
-        <a href={url} target="_blank" rel="noreferrer">Abrir</a>
+        {previewUrl ? <a href={previewUrl} target="_blank" rel="noreferrer">Preview</a> : <span>No R2</span>}
+        {openUrl ? <a href={openUrl} target="_blank" rel="noreferrer">Abrir</a> : null}
       </div>
     </article>
   );
@@ -221,6 +223,10 @@ function LibrarySkeleton() {
       ))}
     </section>
   );
+}
+
+function cleanTitle(value: string) {
+  return value.replace(/^_+/, "").replace(/\.pdf$/i, ".pdf");
 }
 
 function formatBytes(value: number | null) {

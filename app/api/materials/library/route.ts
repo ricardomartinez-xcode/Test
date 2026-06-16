@@ -33,21 +33,15 @@ function firstSection(value: MaterialRow["material_sections"]): SectionRow | nul
   return value ?? null;
 }
 
-function withR2PublicUrl(row: MaterialRow) {
-  const baseUrl =
-    process.env.NEXT_PUBLIC_R2_PUBLIC_BASE_URL ||
-    process.env.NEXT_PUBLIC_CLOUDFLARE_R2_PUBLIC_BASE_URL ||
-    process.env.CLOUDFLARE_R2_PUBLIC_BASE_URL ||
-    "";
-
-  const r2Url =
-    baseUrl && row.r2_key
-      ? `${baseUrl.replace(/\/$/, "")}/${encodeURI(row.r2_key)}`
-      : null;
-
+function withR2Urls(row: MaterialRow) {
+  const hasR2Asset = Boolean(row.r2_key);
   return {
     ...row,
-    public_url: r2Url ?? row.source_url ?? row.preview_url,
+    provider: row.r2_key ? "r2" : row.provider,
+    public_url: hasR2Asset ? `/api/materials/${row.id}/file?mode=download` : null,
+    preview_url: hasR2Asset ? `/api/materials/${row.id}/file?mode=preview` : null,
+    source_url: null,
+    thumbnail_url: null,
     section: firstSection(row.material_sections),
     material_sections: undefined,
   };
@@ -74,6 +68,7 @@ export async function GET(request: Request) {
         "id,title,material_type,provider,source_url,preview_url,thumbnail_url,r2_key,file_name,content_type,size_bytes,section_id,material_sections(id,name,path,color,icon,card_size,preview_style,sort_order)",
       )
       .eq("visibility", "visible")
+      .not("r2_key", "is", null)
       .order("title", { ascending: true })
       .limit(limit);
 
@@ -99,7 +94,7 @@ export async function GET(request: Request) {
     }
 
     const sections = (sectionsResult.data ?? []) as SectionRow[];
-    const materials = ((materialsResult.data ?? []) as MaterialRow[]).map(withR2PublicUrl);
+    const materials = ((materialsResult.data ?? []) as MaterialRow[]).map(withR2Urls);
 
     const countsBySection = materials.reduce<Record<string, number>>((obj, material) => {
       if (!material.section_id) return obj;
@@ -115,7 +110,7 @@ export async function GET(request: Request) {
         sections: sections.length,
         materials: materials.length,
         providers: materials.reduce<Record<string, number>>((acc, material) => {
-          const provider = material.provider ?? "unknown";
+          const provider = material.provider ?? "r2";
           acc[provider] = (acc[provider] ?? 0) + 1;
           return acc;
         }, {}),

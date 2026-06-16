@@ -17,12 +17,7 @@ const taskPatchSchema = z.object({
   notes: z.string().nullable().optional(),
 });
 
-type RouteContext = { params: Promise<{ id: string }> | { id: string } };
-
-async function taskIdFrom(context: RouteContext) {
-  const params = await context.params;
-  return params.id;
-}
+type RouteContext = { params: Promise<{ id: string }> };
 
 function taskSelect() {
   return [
@@ -34,13 +29,13 @@ function taskSelect() {
 }
 
 export async function GET(_request: Request, context: RouteContext) {
-  const taskId = await taskIdFrom(context);
+  const { id } = await context.params;
   const supabase = await createSupabaseServerClient();
 
   const { data, error } = await supabase
     .from("tasks")
     .select(taskSelect())
-    .eq("id", taskId)
+    .eq("id", id)
     .maybeSingle();
 
   if (error) return NextResponse.json({ error: error.message }, { status: 500 });
@@ -50,18 +45,18 @@ export async function GET(_request: Request, context: RouteContext) {
 }
 
 export async function PATCH(request: Request, context: RouteContext) {
-  const taskId = await taskIdFrom(context);
+  const { id } = await context.params;
   const supabase = await createSupabaseServerClient();
   const patch = taskPatchSchema.parse(await request.json());
 
-  const before = await supabase.from("tasks").select("*").eq("id", taskId).maybeSingle();
+  const before = await supabase.from("tasks").select("*").eq("id", id).maybeSingle();
   if (before.error) return NextResponse.json({ error: before.error.message }, { status: 500 });
   if (!before.data) return NextResponse.json({ error: "Tarea no encontrada." }, { status: 404 });
 
   const { data, error } = await supabase
     .from("tasks")
     .update({ ...patch, updated_at: new Date().toISOString() })
-    .eq("id", taskId)
+    .eq("id", id)
     .select(taskSelect())
     .single();
 
@@ -70,7 +65,7 @@ export async function PATCH(request: Request, context: RouteContext) {
   await supabase.from("audit_log").insert({
     action: "task.update",
     entity: "tasks",
-    entity_id: taskId,
+    entity_id: id,
     before_data: before.data,
     after_data: data,
   });
@@ -79,17 +74,17 @@ export async function PATCH(request: Request, context: RouteContext) {
 }
 
 export async function DELETE(_request: Request, context: RouteContext) {
-  const taskId = await taskIdFrom(context);
+  const { id } = await context.params;
   const supabase = await createSupabaseServerClient();
 
-  const before = await supabase.from("tasks").select("*").eq("id", taskId).maybeSingle();
+  const before = await supabase.from("tasks").select("*").eq("id", id).maybeSingle();
   if (before.error) return NextResponse.json({ error: before.error.message }, { status: 500 });
   if (!before.data) return NextResponse.json({ error: "Tarea no encontrada." }, { status: 404 });
 
   const { data, error } = await supabase
     .from("tasks")
     .update({ archived_at: new Date().toISOString(), updated_at: new Date().toISOString() })
-    .eq("id", taskId)
+    .eq("id", id)
     .select("id,archived_at")
     .single();
 
@@ -98,7 +93,7 @@ export async function DELETE(_request: Request, context: RouteContext) {
   await supabase.from("audit_log").insert({
     action: "task.archive",
     entity: "tasks",
-    entity_id: taskId,
+    entity_id: id,
     before_data: before.data,
     after_data: data,
   });

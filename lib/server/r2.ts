@@ -1,4 +1,4 @@
-import { PutObjectCommand, S3Client } from "@aws-sdk/client-s3";
+import { GetObjectCommand, PutObjectCommand, S3Client } from "@aws-sdk/client-s3";
 import { getSignedUrl } from "@aws-sdk/s3-request-presigner";
 
 function required(name: string) {
@@ -43,4 +43,24 @@ export async function createUploadUrl(input: { key: string; contentType: string 
     publicUrl: publicBaseUrl ? `${publicBaseUrl.replace(/\/$/, "")}/${input.key}` : null,
     expiresIn: 300,
   };
+}
+
+export async function createR2ReadUrl(input: {
+  key: string;
+  fileName?: string | null;
+  contentType?: string | null;
+  disposition?: "inline" | "attachment";
+}) {
+  const bucket = required("CLOUDFLARE_R2_BUCKET");
+  const client = getR2Client();
+  const fileName = input.fileName?.trim() || input.key.split("/").pop() || "material";
+  const encodedFileName = encodeURIComponent(fileName);
+  const command = new GetObjectCommand({
+    Bucket: bucket,
+    Key: input.key,
+    ResponseContentType: input.contentType ?? undefined,
+    ResponseContentDisposition: `${input.disposition ?? "inline"}; filename*=UTF-8''${encodedFileName}`,
+  });
+
+  return getSignedUrl(client, command, { expiresIn: 60 * 5 });
 }
