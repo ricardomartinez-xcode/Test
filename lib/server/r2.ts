@@ -1,6 +1,6 @@
-import { GetObjectCommand, ListObjectsV2Command, PutObjectCommand, S3Client } from "@aws-sdk/client-s3";
+import { GetObjectCommand, HeadObjectCommand, ListObjectsV2Command, PutObjectCommand, S3Client } from "@aws-sdk/client-s3";
 import { getSignedUrl } from "@aws-sdk/s3-request-presigner";
-import { normalizeMaterialR2Key } from "@/lib/server/r2-paths";
+import { MATERIALS_R2_ROOT, normalizeMaterialR2Key } from "@/lib/server/r2-paths";
 
 function required(name: string) {
   const value = process.env[name];
@@ -23,6 +23,43 @@ function normalizeBaseUrl(value: string | undefined | null) {
   } catch {
     return withProtocol.replace(/\/+$/, "");
   }
+}
+
+function unique(values: Array<string | null | undefined>) {
+  return Array.from(new Set(values.map((value) => value?.trim() ?? "").filter(Boolean)));
+}
+
+function safeDecode(value: string) {
+  try {
+    return decodeURIComponent(value);
+  } catch {
+    return value;
+  }
+}
+
+function parentPrefix(key: string) {
+  const parts = key.split("/").filter(Boolean);
+  parts.pop();
+  return parts.length ? `${parts.join("/")}/` : "";
+}
+
+function basename(key: string) {
+  return key.split("/").filter(Boolean).pop() ?? key;
+}
+
+function comparable(value: string | null | undefined) {
+  return (value ?? "")
+    .normalize("NFD")
+    .replace(/[\u0300-\u036f]/g, "")
+    .toLowerCase()
+    .replace(/[^a-z0-9]+/g, " ")
+    .trim()
+    .replace(/\s+/g, " ");
+}
+
+function isNotFoundError(error: unknown) {
+  const maybeError = error as { name?: string; $metadata?: { httpStatusCode?: number } };
+  return maybeError?.name === "NotFound" || maybeError?.$metadata?.httpStatusCode === 404;
 }
 
 export function hasR2Config() {
@@ -92,6 +129,82 @@ export function getR2Client() {
       secretAccessKey: required("CLOUDFLARE_R2_SECRET_ACCESS_KEY"),
     },
   });
+}
+
+export async function r2ObjectExists(key: string) {
+  const bucket = getR2BucketName();
+  if (!bucket) throw new Error("Missing env var: CLOUDFLARE_R2_BUCKET");
+  const client = getR2Client();
+
+  try {
+    await client.send(new HeadObjectCommand({ Bucket: bucket, Key: key }));
+    return true;
+  } catch (error) {
+    if (isNotFoundError(error)) return false;
+    throw error;
+  }
+}
+
+export async function resolveR2ObjectKey(input: { key: string; fileName?: string | null; title?: string | null }) {
+  const bucket = getR2BucketName();
+  if (!bucket) throw new Error("Missing env var: CLOUDFLARE_R2_BUCKET");
+  const client = getR2Client();
+
+  const decodedKey = safeDecode(input.key);
+  const normalizedKey = normalizeMaterialR2Key(decodedKey);
+  const exactCandidates = unique([
+    input.key,
+    decodedKey,
+    normalizeMaterialR2Key(input.key),
+    normalizedKey,
+    normalizedKey.normalize("NFC"),
+    normalizedKey.normalize("NFD"),
+  ]);
+
+  for (const candidate of exactCandidates) {
+    if (await r2ObjectExists(candidate)) return candidate;
+  }
+
+  const targetNames = unique([
+    basename(input.key),
+    basename(decodedKey),
+    basename(normalizedKey),
+    input.fileName ?? undefined,
+    input.title ?? undefined,
+  ]).map(comparable).filter(Boolean);
+
+  const prefixes = unique([
+    parentPrefix(normalizedKey),
+    parentPrefix(decodedKey),
+    `${MATERIALS_R2_ROOT}/`,
+  ]);
+
+  for (const prefix of prefixes) {
+    let continuationToken: string | undefined;
+    let pages = 0;
+
+    do {
+      const response = await client.send(new ListObjectsV2Command({
+        Bucket: bucket,
+        Prefix: prefix,
+        ContinuationToken: continuationToken,
+        MaxKeys: 1000,
+      }));
+
+      for (const object of response.Contents ?? []) {
+        const objectKey = object.Key;
+        if (!objectKey) continue;
+
+        if (exactCandidates.includes(objectKey)) return objectKey;
+        if (targetNames.includes(comparable(basename(objectKey)))) return objectKey;
+      }
+
+      continuationToken = response.IsTruncated ? response.NextContinuationToken : undefined;
+      pages += 1;
+    } while (continuationToken && pages < 10);
+  }
+
+  throw new Error(`No se encontró el objeto R2. Key intentada: ${normalizedKey}`);
 }
 
 export async function createUploadUrl(input: { key: string; contentType: string }) {
