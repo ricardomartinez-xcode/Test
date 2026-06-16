@@ -1,5 +1,6 @@
 import { GetObjectCommand, ListObjectsV2Command, PutObjectCommand, S3Client } from "@aws-sdk/client-s3";
 import { getSignedUrl } from "@aws-sdk/s3-request-presigner";
+import { normalizeMaterialR2Key } from "@/lib/server/r2-paths";
 
 function required(name: string) {
   const value = process.env[name];
@@ -46,7 +47,7 @@ export function getR2EndpointConfig() {
     url.hash = "";
     return { endpoint: url.toString().replace(/\/$/, ""), bucketFromEndpoint };
   } catch {
-    return { endpoint: raw.replace(/\/+$/, ""), bucketFromEndpoint: "" };
+    return { endpoint: raw.replace(/\/+$|\s+$/g, ""), bucketFromEndpoint: "" };
   }
 }
 
@@ -76,7 +77,8 @@ export function encodeR2Key(key: string) {
 
 export function createPublicR2Url(key: string | null | undefined) {
   const publicBaseUrl = getR2PublicBaseUrl();
-  return key && publicBaseUrl ? `${publicBaseUrl}/${encodeR2Key(key)}` : null;
+  const normalizedKey = normalizeMaterialR2Key(key);
+  return normalizedKey && publicBaseUrl ? `${publicBaseUrl}/${encodeR2Key(normalizedKey)}` : null;
 }
 
 export function getR2Client() {
@@ -119,11 +121,12 @@ export async function createR2ReadUrl(input: {
   const bucket = getR2BucketName();
   if (!bucket) throw new Error("Missing env var: CLOUDFLARE_R2_BUCKET");
   const client = getR2Client();
-  const fileName = input.fileName?.trim() || input.key.split("/").pop() || "material";
+  const normalizedKey = normalizeMaterialR2Key(input.key);
+  const fileName = input.fileName?.trim() || normalizedKey.split("/").pop() || "material";
   const encodedFileName = encodeURIComponent(fileName);
   const command = new GetObjectCommand({
     Bucket: bucket,
-    Key: input.key,
+    Key: normalizedKey,
     ResponseContentType: input.contentType ?? undefined,
     ResponseContentDisposition: `${input.disposition ?? "inline"}; filename*=UTF-8''${encodedFileName}`,
   });
