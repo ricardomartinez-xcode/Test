@@ -7,6 +7,7 @@ import "./auth.css";
 import "./material-library.css";
 import "./admin-hub.css";
 import "./admin-fixes.css";
+import "./workspace.css";
 
 export const metadata: Metadata = {
   title: "PSCV Room 2.0",

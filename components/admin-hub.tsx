@@ -2,10 +2,9 @@
 
 import { useEffect, useMemo, useState } from "react";
 import { createSupabaseBrowserClient } from "@/lib/supabase/client";
-import type { ConfigColumn } from "@/lib/domain";
 
 type SupabaseBrowser = NonNullable<ReturnType<typeof createSupabaseBrowserClient>>;
-type AdminTab = "general" | "tasks" | "courses" | "sections" | "materials" | "users" | "legacy";
+type AdminTab = "general" | "tasks" | "courses" | "sections" | "materials" | "users";
 type CardSize = "compact" | "medium" | "large";
 
 type CourseConfig = { id: string; name: string; shortName: string; color: string; icon: string; cardSize: CardSize; active: boolean };
@@ -15,7 +14,7 @@ type AdminTaskRow = { id: string; title: string; due_date: string; due_time: str
 type AppProfileRow = { id: string; email: string; full_name: string | null; control_number: string | null; role: "student" | "admin" | "owner"; active: boolean; can_edit_tasks: boolean; can_delete_tasks: boolean };
 type TaskForm = { title: string; courseId: string; typeId: string; dueDate: string; dueTime: string; status: string; priority: string; visible: boolean; materialUrl: string; platformUrl: string; notes: string; materialNeeded: string };
 
-type AdminHubProps = { courses: CourseConfig[]; sections: SectionConfig[]; columns: ConfigColumn[]; supabase: SupabaseBrowser | null; reload: () => Promise<void>; onCourses: (courses: CourseConfig[]) => void; onSections: (sections: SectionConfig[]) => void; onError: (error: string | null) => void };
+type AdminHubProps = { courses: CourseConfig[]; sections: SectionConfig[]; columns?: unknown[]; supabase: SupabaseBrowser | null; reload: () => Promise<void>; onCourses: (courses: CourseConfig[]) => void; onSections: (sections: SectionConfig[]) => void; onError: (error: string | null) => void };
 
 const tabs: Array<{ id: AdminTab; label: string; icon: string }> = [
   { id: "general", label: "General", icon: "▣" },
@@ -24,12 +23,11 @@ const tabs: Array<{ id: AdminTab; label: string; icon: string }> = [
   { id: "sections", label: "Secciones", icon: "▤" },
   { id: "materials", label: "Materiales", icon: "⬡" },
   { id: "users", label: "Usuarios", icon: "☷" },
-  { id: "legacy", label: "Legacy", icon: "⌁" },
 ];
 
 const emptyTaskForm: TaskForm = { title: "", courseId: "", typeId: "", dueDate: new Date().toISOString().slice(0, 10), dueTime: "23:59", status: "Pendiente", priority: "Media", visible: true, materialUrl: "", platformUrl: "", notes: "", materialNeeded: "" };
 
-export function AdminHub({ courses, sections, columns, supabase, reload, onCourses, onSections, onError }: AdminHubProps) {
+export function AdminHub({ courses, sections, supabase, reload, onCourses, onSections, onError }: AdminHubProps) {
   const [activeTab, setActiveTab] = useState<AdminTab>("general");
   const [profiles, setProfiles] = useState<AppProfileRow[]>([]);
   const [loadingUsers, setLoadingUsers] = useState(false);
@@ -37,7 +35,10 @@ export function AdminHub({ courses, sections, columns, supabase, reload, onCours
   const [adminTasks, setAdminTasks] = useState<AdminTaskRow[]>([]);
   const [loadingTasks, setLoadingTasks] = useState(false);
 
+  // Tab-driven loads intentionally run only when the active admin module changes.
+  // eslint-disable-next-line react-hooks/exhaustive-deps
   useEffect(() => { if (activeTab === "users") void loadProfiles(); }, [activeTab]);
+  // eslint-disable-next-line react-hooks/exhaustive-deps
   useEffect(() => { if (activeTab === "tasks") void loadTaskAdminData(); }, [activeTab]);
 
   async function loadProfiles() {
@@ -113,7 +114,7 @@ export function AdminHub({ courses, sections, columns, supabase, reload, onCours
     else await reload();
   }
 
-  const stats = useMemo(() => ({ courses: courses.length, sections: sections.length, activeSections: sections.filter((section) => section.active).length, legacyColumns: columns.length, activeLegacyColumns: columns.filter((column) => column.active).length, tasks: adminTasks.length }), [courses, sections, columns, adminTasks]);
+  const stats = useMemo(() => ({ courses: courses.length, sections: sections.length, activeSections: sections.filter((section) => section.active).length, tasks: adminTasks.length }), [courses, sections, adminTasks]);
 
   return (
     <div className="adminHub">
@@ -125,12 +126,11 @@ export function AdminHub({ courses, sections, columns, supabase, reload, onCours
       {activeTab === "sections" ? <SectionsPanel sections={sections} onUpdate={(id, patch) => void updateSection(id, patch)} /> : null}
       {activeTab === "materials" ? <MaterialUploadPanel sections={sections} supabase={supabase} reload={reload} onError={onError} /> : null}
       {activeTab === "users" ? <UsersPanel profiles={profiles} loading={loadingUsers} onReload={() => void loadProfiles()} onUpdate={(id, patch) => void updateProfile(id, patch)} /> : null}
-      {activeTab === "legacy" ? <LegacyPanel columns={columns} /> : null}
     </div>
   );
 }
 
-function GeneralPanel({ stats }: { stats: { courses: number; sections: number; activeSections: number; legacyColumns: number; activeLegacyColumns: number; tasks: number } }) {
+function GeneralPanel({ stats }: { stats: { courses: number; sections: number; activeSections: number; tasks: number } }) {
   return <section className="adminPanelGrid"><MetricCard label="Tareas" value={stats.tasks} help="Últimas tareas cargadas" /><MetricCard label="Materias" value={stats.courses} help="Catálogo visual" /><MetricCard label="Secciones" value={stats.sections} help={`${stats.activeSections} visibles`} /><MetricCard label="Storage" value="R2" help="Subidas directas" /></section>;
 }
 
@@ -169,8 +169,6 @@ function MaterialUploadPanel({ sections, supabase, reload, onError }: { sections
 }
 
 function UsersPanel({ profiles, loading, onReload, onUpdate }: { profiles: AppProfileRow[]; loading: boolean; onReload: () => void; onUpdate: (id: string, patch: Partial<AppProfileRow>) => void }) { return <section className="adminCard"><div className="adminCardHead"><div><h3>Usuarios</h3><p>Consulta perfiles, roles y permisos operativos.</p></div><button type="button" onClick={onReload}>{loading ? "Cargando..." : "Recargar"}</button></div><div className="adminUserList">{profiles.map((profile) => <article className="adminUserRow" key={profile.id}><div><strong>{profile.full_name ?? profile.email}</strong><small>{profile.email} · {profile.control_number ?? "sin control"}</small></div><select value={profile.role} onChange={(event) => onUpdate(profile.id, { role: event.target.value as AppProfileRow["role"] })}><option value="student">Alumno</option><option value="admin">Admin</option><option value="owner">Owner</option></select><label><input type="checkbox" checked={profile.active} onChange={(event) => onUpdate(profile.id, { active: event.target.checked })} />Activo</label><label><input type="checkbox" checked={profile.can_edit_tasks} onChange={(event) => onUpdate(profile.id, { can_edit_tasks: event.target.checked })} />Edita</label></article>)}{!profiles.length && !loading ? <p className="muted">No se pudieron cargar usuarios o no hay permisos RLS para leerlos.</p> : null}</div></section>; }
-
-function LegacyPanel({ columns }: { columns: ConfigColumn[] }) { return <section className="adminCard"><div className="adminCardHead"><div><h3>Columnas legacy</h3><p>Referencia de configuración migrada desde AppSheet/Sheets.</p></div></div><div className="legacyGrid">{columns.map((column) => <span className="configPill" key={column.key}>{column.name}: {column.active ? "SI" : "NO"}</span>)}</div></section>; }
 
 function first<T>(value: T | T[] | null | undefined): T | null { return Array.isArray(value) ? value[0] ?? null : value ?? null; }
 function toDbPatch(patch: Partial<CourseConfig> | Partial<SectionConfig>) { const out: Record<string, unknown> = { updated_at: new Date().toISOString() }; if ("color" in patch) out.color = patch.color; if ("icon" in patch) out.icon = patch.icon; if ("cardSize" in patch) out.card_size = patch.cardSize; if ("previewStyle" in patch) out.preview_style = patch.previewStyle; if ("active" in patch) out.active = patch.active; return out; }
