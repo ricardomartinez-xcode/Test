@@ -1,20 +1,22 @@
-export const MATERIALS_R2_ROOT = "psicologia";
+export const MATERIALS_R2_ROOT = "";
 
 export const DEFAULT_R2_FOLDER_DESTINATIONS = [
-  "psicologia/Alteraciones de la conducta",
-  "psicologia/Compendio de Psicología",
-  "psicologia/Compendio de Psicología/Articulos de Investigación",
-  "psicologia/Compendio de Psicología/Criminología",
-  "psicologia/Compendio de Psicología/Pscopatologías",
-  "psicologia/Compendio de Psicología/Psicologia educativa",
-  "psicologia/Compendio de Psicología/Psicología Clínica",
-  "psicologia/Compendio de Psicología/Psicología general",
-  "psicologia/Compendio de Psicología/Psicología organizacional",
-  "psicologia/Compendio de Psicología/Test, cuestionarios, etc",
-  "psicologia/Evaluacion Psicológica I",
-  "psicologia/Procesos Grupales",
-  "psicologia/Teorias del Aprendizaje",
+  "Alteraciones de la conducta",
+  "Compendio de Psicología",
+  "Compendio de Psicología/Articulos de Investigación",
+  "Compendio de Psicología/Criminología",
+  "Compendio de Psicología/Pscopatologías",
+  "Compendio de Psicología/Psicologia educativa",
+  "Compendio de Psicología/Psicología Clínica",
+  "Compendio de Psicología/Psicología general",
+  "Compendio de Psicología/Psicología organizacional",
+  "Compendio de Psicología/Test, cuestionarios, etc",
+  "Evaluacion Psicológica I",
+  "Procesos Grupales",
+  "Teorias del Aprendizaje",
 ];
+
+const LEGACY_BUCKET_ROOT = "psicologia";
 
 const KNOWN_SEGMENTS: Record<string, string> = {
   psicologia: "psicologia",
@@ -73,10 +75,18 @@ export function normalizeMaterialR2Key(value: string | null | undefined) {
     return normalizeFolderSegment(part);
   });
 
-  if (keyForAlias(normalizedParts[0]) !== MATERIALS_R2_ROOT) {
-    normalizedParts.unshift(MATERIALS_R2_ROOT);
-  } else {
-    normalizedParts[0] = MATERIALS_R2_ROOT;
+  const root = cleanPath(MATERIALS_R2_ROOT);
+
+  if (root) {
+    if (keyForAlias(normalizedParts[0]) !== keyForAlias(root)) {
+      normalizedParts.unshift(root);
+    } else {
+      normalizedParts[0] = root;
+    }
+  } else if (keyForAlias(normalizedParts[0]) === LEGACY_BUCKET_ROOT) {
+    // The R2 bucket itself is named "psicologia"; it is not a folder prefix.
+    // Strip legacy keys that were built as "psicologia/..." so public URLs target the bucket root.
+    normalizedParts.shift();
   }
 
   return cleanPath(normalizedParts.join("/"));
