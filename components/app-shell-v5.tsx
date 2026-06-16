@@ -236,15 +236,16 @@ export function AppShellV5({ initialTasks, initialMembers }: Props) {
     return { ...task, daysRemaining, status, visibleToReaders: deriveReaderVisibility({ status }) };
   });
 
+  const activeTasks = normalizedTasks.filter((task) => task.status !== "Entregado" && task.status !== "Cancelado");
   const listBase = role === "admin"
-    ? normalizedTasks
-    : normalizedTasks.filter((task) => task.visibleToReaders || prefs.showCompleted);
+    ? activeTasks
+    : activeTasks.filter((task) => task.visibleToReaders);
   const visibleTasks = sortTasks(listBase);
   const completedTasks = sortTasks(normalizedTasks.filter((task) => task.status === "Entregado"));
   const shownTasks = filterTasks(visibleTasks, query);
   const selectedTask = selectedTaskId
-    ? visibleTasks.find((task) => task.id === selectedTaskId) ?? visibleTasks[0] ?? null
-    : visibleTasks[0] ?? null;
+    ? shownTasks.find((task) => task.id === selectedTaskId) ?? shownTasks[0] ?? null
+    : shownTasks[0] ?? null;
 
   function go(next: Tab) {
     if (["completed", "group", "admin"].includes(next) && role !== "admin") return;
@@ -282,9 +283,9 @@ export function AppShellV5({ initialTasks, initialMembers }: Props) {
 
       <section className="screen">
         {tab === "calendar" ? <Calendar tasks={visibleTasks} cursor={cursor} setCursor={setCursor} selectedTask={selectedTask} onSelect={setSelectedTaskId} /> : null}
-        {tab === "tasks" ? <TaskList tasks={shownTasks} role={role} onDone={(id) => void markDone(id)} /> : null}
+        {tab === "tasks" ? <TaskList tasks={shownTasks} role={role} selectedTask={selectedTask} density={prefs.taskDensity} onSelect={setSelectedTaskId} onDone={(id) => void markDone(id)} /> : null}
         {tab === "materials" ? <MaterialLibrary previewSize={prefs.materialPreviewSize} globalQuery={query} /> : null}
-        {tab === "completed" ? <TaskList tasks={completedTasks} role="reader" onDone={() => undefined} /> : null}
+        {tab === "completed" ? <TaskList tasks={completedTasks} role="reader" selectedTask={null} density={prefs.taskDensity} onSelect={() => undefined} onDone={() => undefined} completedOnly /> : null}
         {tab === "group" ? <Group members={initialMembers} /> : null}
         {tab === "prefs" ? <Preferences profile={profile} supabase={supabase} onProfile={setProfile} onError={setError} /> : null}
         {tab === "admin" ? (
@@ -431,29 +432,53 @@ function TaskDetailPanel({ task }: { task: UiTask | null }) {
   );
 }
 
-function TaskList({ tasks, role, onDone }: { tasks: UiTask[]; role: Role; onDone: (id: string) => void }) {
+function TaskList({
+  tasks,
+  role,
+  selectedTask,
+  density,
+  completedOnly = false,
+  onSelect,
+  onDone,
+}: {
+  tasks: UiTask[];
+  role: Role;
+  selectedTask: UiTask | null;
+  density: CardSize;
+  completedOnly?: boolean;
+  onSelect: (id: string) => void;
+  onDone: (id: string) => void;
+}) {
   const grouped = groupTasks(tasks);
+  const detailTask = completedOnly ? null : selectedTask;
   return (
-    <div className="listScreen">
-      {deliveryTypes.map((type) => {
-        const rows = grouped.get(type) ?? [];
-        if (!rows.length) return null;
-        return (
-          <section className="typeGroup" key={type}>
-            <h2 className="groupTitle" style={{ color: rows[0].taskTypeColor ?? undefined }}><ListTodo size={22} />{type}</h2>
-            {rows.map((task) => (
-              <article className={`dataRow taskRow card-${task.courseCardSize ?? "medium"}`} style={{ borderLeft: `5px solid ${task.courseColor ?? "#4285dc"}` }} key={task.id}>
-                <div className="rowMain"><strong>{task.title}</strong><span>{task.course}</span></div>
-                <div className="rowSide">
-                  <span className="days">D{task.daysRemaining}</span>
-                  {task.materialUrl ? <a className="openIcon" aria-label="Abrir material" title="Abrir material" href={task.materialUrl} target="_blank" rel="noreferrer"><ExternalLink size={20} /></a> : null}
-                  {role === "admin" ? <button className="miniAction" aria-label="Marcar entregada" title="Marcar entregada" onClick={() => onDone(task.id)} type="button"><Check size={16} /></button> : null}
-                </div>
-              </article>
-            ))}
-          </section>
-        );
-      })}
+    <div className={`taskListWorkspace ${completedOnly ? "completedOnly" : ""}`}>
+      <div className="listScreen">
+        {deliveryTypes.map((type) => {
+          const rows = grouped.get(type) ?? [];
+          if (!rows.length) return null;
+          return (
+            <section className="typeGroup" key={type}>
+              <h2 className="groupTitle" style={{ color: rows[0].taskTypeColor ?? undefined }}><ListTodo size={22} />{type}</h2>
+              {rows.map((task) => (
+                <article className={`dataRow taskRow card-${density} ${selectedTask?.id === task.id ? "selected" : ""}`} style={{ borderLeft: `5px solid ${task.courseColor ?? "#4285dc"}` }} key={task.id}>
+                  <button className="taskRowButton" onClick={() => onSelect(task.id)} type="button" aria-label={`Ver detalles de ${task.title}`}>
+                    <span className="rowMain"><strong>{task.title}</strong><span>{task.course}</span></span>
+                    <span className="rowDue">{task.dueDate} · {task.dueTime}</span>
+                  </button>
+                  <div className="rowSide">
+                    <span className="days">D{task.daysRemaining}</span>
+                    {task.materialUrl ? <a className="openIcon" aria-label="Abrir material" title="Abrir material" href={task.materialUrl} target="_blank" rel="noreferrer"><ExternalLink size={20} /></a> : null}
+                    {role === "admin" ? <button className="miniAction" aria-label="Marcar entregada" title="Marcar entregada" onClick={() => onDone(task.id)} type="button"><Check size={16} /></button> : null}
+                  </div>
+                </article>
+              ))}
+            </section>
+          );
+        })}
+        {!tasks.length ? <section className="emptyLibrary"><strong>{completedOnly ? "Sin tareas entregadas" : "Sin tareas activas"}</strong><p>{completedOnly ? "Cuando marques una tarea como entregada aparecerá aquí." : "Las tareas entregadas se muestran solamente en Entregadas."}</p></section> : null}
+      </div>
+      {!completedOnly ? <TaskDetailPanel task={detailTask} /> : null}
     </div>
   );
 }
@@ -475,9 +500,15 @@ function Preferences({ profile, supabase, onProfile, onError }: { profile: Profi
   async function update<K extends keyof UserPreferences>(key: K, value: UserPreferences[K]) {
     const next = { ...prefs, [key]: value };
     if (profile) onProfile({ ...profile, preferences: next });
-    if (supabase) {
-      const { error } = await supabase.rpc("update_my_preferences", { preferences_input: next });
-      if (error) onError(error.message);
+    if (supabase && profile) {
+      const { error } = await supabase
+        .from("app_profiles")
+        .update({ preferences: next, updated_at: new Date().toISOString() })
+        .eq("id", profile.id);
+      if (error) {
+        const fallback = await supabase.rpc("update_my_preferences", { preferences_input: next });
+        if (fallback.error) onError(fallback.error.message);
+      }
     }
   }
 
@@ -490,7 +521,7 @@ function Preferences({ profile, supabase, onProfile, onError }: { profile: Profi
           <label>Vista<select value={prefs.calendarView} onChange={(event) => void update("calendarView", event.target.value as UserPreferences["calendarView"])}><option value="month">Mes</option><option value="week">Semana</option><option value="day">Día</option></select></label>
           <label>Densidad<select value={prefs.taskDensity} onChange={(event) => void update("taskDensity", event.target.value as CardSize)}><option value="compact">Compacta</option><option value="medium">Media</option><option value="large">Grande</option></select></label>
           <label>Previews<select value={prefs.materialPreviewSize} onChange={(event) => void update("materialPreviewSize", event.target.value as UserPreferences["materialPreviewSize"])}><option value="small">Pequeños</option><option value="medium">Medianos</option><option value="large">Grandes</option></select></label>
-          <label className="checkSetting"><input type="checkbox" checked={prefs.showCompleted} onChange={(event) => void update("showCompleted", event.target.checked)} /> Mostrar entregadas</label>
+          <label className="checkSetting"><input type="checkbox" checked={prefs.showCompleted} onChange={(event) => void update("showCompleted", event.target.checked)} /> Guardar entregadas en mi perfil</label>
         </div>
       </section>
     </div>
@@ -507,7 +538,17 @@ function asOne<T>(value: T | T[] | null | undefined): T | null { return Array.is
 function cardSize(value: unknown): CardSize { return value === "compact" || value === "large" ? value : "medium"; }
 function delivery(value: unknown): DeliveryType { const text = String(value ?? "Tarea"); return deliveryTypes.includes(text as DeliveryType) ? text as DeliveryType : "Tarea"; }
 function status(value: unknown): TaskStatus { const text = String(value ?? "Pendiente"); return statuses.includes(text as TaskStatus) ? text as TaskStatus : "Pendiente"; }
-function toProfile(row: Record<string, unknown>): Profile { return { id: String(row.id), email: String(row.email), fullName: String(row.full_name ?? row.email), role: row.role === "owner" ? "owner" : row.role === "admin" ? "admin" : "student", preferences: { ...fallbackPrefs, ...(typeof row.preferences === "object" && row.preferences ? row.preferences : {}) } as UserPreferences }; }
+function toProfile(row: Record<string, unknown>): Profile { return { id: String(row.id), email: String(row.email), fullName: String(row.full_name ?? row.email), role: row.role === "owner" ? "owner" : row.role === "admin" ? "admin" : "student", preferences: normalizePreferences(row.preferences) }; }
 function toCourse(row: Record<string, unknown>): CourseConfig { return { id: String(row.id), name: String(row.name), shortName: String(row.short_name ?? row.name), color: String(row.color ?? "#4285dc"), icon: String(row.icon ?? "book"), cardSize: cardSize(row.card_size), active: Boolean(row.active ?? true) }; }
 function toSection(row: Record<string, unknown>): SectionConfig { return { id: String(row.id), name: String(row.name), path: String(row.path), color: String(row.color ?? "#4285dc"), icon: String(row.icon ?? "folder"), cardSize: cardSize(row.card_size), previewStyle: String(row.preview_style ?? "thumbnail"), active: Boolean(row.active ?? true) }; }
 function toTask(row: Record<string, unknown>): UiTask { const course = asOne(row.courses as Record<string, unknown> | Record<string, unknown>[] | null); const type = asOne(row.task_types as Record<string, unknown> | Record<string, unknown>[] | null); const dueDate = String(row.due_date); const daysRemaining = calculateDaysRemaining(dueDate); const next = deriveStatus(status(row.status), daysRemaining); return { id: String(row.id), course: String(course?.name ?? "Sin materia"), dueDate, dueTime: String(row.due_time ?? "23:59").slice(0, 5), title: String(row.title ?? "Sin título"), materialNeeded: row.material_needed ? String(row.material_needed) : "", materialUrl: row.material_url ? String(row.material_url) : "", deliveryType: delivery(type?.name), status: next, daysRemaining, notes: row.notes ? String(row.notes) : "", platformUrl: row.platform_url ? String(row.platform_url) : "", visibleToReaders: Boolean(row.visible_to_students), courseColor: course?.color ? String(course.color) : undefined, taskTypeColor: type?.color ? String(type.color) : undefined, courseCardSize: cardSize(course?.card_size) }; }
+function normalizePreferences(value: unknown): UserPreferences {
+  const input = typeof value === "object" && value ? value as Partial<UserPreferences> : {};
+  return {
+    calendarView: input.calendarView === "week" || input.calendarView === "day" ? input.calendarView : "month",
+    taskDensity: cardSize(input.taskDensity),
+    materialPreviewSize: input.materialPreviewSize === "small" || input.materialPreviewSize === "large" ? input.materialPreviewSize : "medium",
+    showCompleted: Boolean(input.showCompleted),
+    theme: input.theme === "light" || input.theme === "dark" ? input.theme : "system",
+  };
+}

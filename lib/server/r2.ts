@@ -1,4 +1,4 @@
-import { GetObjectCommand, PutObjectCommand, S3Client } from "@aws-sdk/client-s3";
+import { GetObjectCommand, ListObjectsV2Command, PutObjectCommand, S3Client } from "@aws-sdk/client-s3";
 import { getSignedUrl } from "@aws-sdk/s3-request-presigner";
 
 function required(name: string) {
@@ -63,4 +63,37 @@ export async function createR2ReadUrl(input: {
   });
 
   return getSignedUrl(client, command, { expiresIn: 60 * 5 });
+}
+
+export async function listR2FolderPrefixes(input: { root: string }) {
+  const bucket = required("CLOUDFLARE_R2_BUCKET");
+  const client = getR2Client();
+  const rootPrefix = input.root.replace(/\/$/, "");
+  const queue = [`${rootPrefix}/`];
+  const seen = new Set<string>([rootPrefix]);
+
+  while (queue.length) {
+    const prefix = queue.shift()!;
+    let continuationToken: string | undefined;
+
+    do {
+      const response = await client.send(new ListObjectsV2Command({
+        Bucket: bucket,
+        Prefix: prefix,
+        Delimiter: "/",
+        ContinuationToken: continuationToken,
+      }));
+
+      for (const item of response.CommonPrefixes ?? []) {
+        const folder = item.Prefix?.replace(/\/$/, "");
+        if (!folder || seen.has(folder)) continue;
+        seen.add(folder);
+        queue.push(`${folder}/`);
+      }
+
+      continuationToken = response.IsTruncated ? response.NextContinuationToken : undefined;
+    } while (continuationToken);
+  }
+
+  return Array.from(seen).sort((a, b) => a.localeCompare(b, "es"));
 }

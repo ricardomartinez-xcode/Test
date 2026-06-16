@@ -173,6 +173,34 @@ as $$
   select id from public.app_profiles where auth_user_id = auth.uid() and active = true limit 1
 $$;
 
+create or replace function public.update_my_preferences(preferences_input jsonb)
+returns jsonb
+language plpgsql
+security definer
+set search_path = public
+as $$
+declare
+  merged_preferences jsonb;
+begin
+  update public.app_profiles
+  set
+    preferences = coalesce(preferences, '{}'::jsonb) || coalesce(preferences_input, '{}'::jsonb),
+    updated_at = now()
+  where auth_user_id = auth.uid()
+    and active = true
+  returning preferences into merged_preferences;
+
+  if merged_preferences is null then
+    raise exception 'Perfil activo no encontrado para el usuario actual.';
+  end if;
+
+  return merged_preferences;
+end;
+$$;
+
+revoke all on function public.update_my_preferences(jsonb) from public;
+grant execute on function public.update_my_preferences(jsonb) to authenticated;
+
 create or replace function public.is_admin()
 returns boolean
 language sql

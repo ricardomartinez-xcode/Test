@@ -58,9 +58,9 @@ function withR2Urls(row: MaterialRow) {
   return {
     ...row,
     provider: row.r2_key ? "r2" : row.provider,
-    public_url: publicR2Url ?? signedDownloadUrl,
-    preview_url: publicR2Url ?? signedPreviewUrl,
-    source_url: publicR2Url,
+    public_url: signedDownloadUrl ?? publicR2Url,
+    preview_url: signedPreviewUrl ?? publicR2Url,
+    source_url: publicR2Url ?? signedDownloadUrl,
     thumbnail_url: null,
     section: firstSection(row.material_sections),
     material_sections: undefined,

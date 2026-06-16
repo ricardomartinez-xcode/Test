@@ -119,7 +119,7 @@ export function MaterialLibrary({ previewSize, globalQuery = "" }: MaterialLibra
     return data.sections.find((section) => section.id === sectionId) ?? null;
   }, [data, sectionId]);
 
-  const visibleSections = data?.sections.filter((section) => section.material_count > 0) ?? [];
+  const visibleSections = data?.sections ?? [];
   const materials = data?.materials ?? [];
 
   return (

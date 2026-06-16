@@ -33,12 +33,19 @@ export async function GET(request: Request, context: RouteContext) {
   if (!data) return NextResponse.json({ error: "Material no encontrado." }, { status: 404 });
   if (!data.r2_key) return NextResponse.json({ error: "Este material no tiene asset R2 asociado." }, { status: 404 });
 
-  const signedUrl = await createR2ReadUrl({
-    key: data.r2_key,
-    fileName: data.file_name || data.title,
-    contentType: data.content_type,
-    disposition: mode === "download" ? "attachment" : "inline",
-  });
+  try {
+    const signedUrl = await createR2ReadUrl({
+      key: data.r2_key,
+      fileName: data.file_name || data.title,
+      contentType: data.content_type,
+      disposition: mode === "download" ? "attachment" : "inline",
+    });
 
-  return NextResponse.redirect(signedUrl, { status: 302 });
+    return NextResponse.redirect(signedUrl, { status: 302 });
+  } catch (signError) {
+    return NextResponse.json(
+      { error: signError instanceof Error ? signError.message : "No se pudo firmar el documento R2." },
+      { status: 500 },
+    );
+  }
 }

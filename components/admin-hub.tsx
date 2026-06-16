@@ -13,6 +13,7 @@ type TaskTypeRow = { id: string; name: string; color: string | null; icon: strin
 type AdminTaskRow = { id: string; title: string; due_date: string; due_time: string | null; status: string; priority: string; visible_to_students: boolean; material_url: string | null; platform_url: string | null; courses: { name: string; color: string | null } | { name: string; color: string | null }[] | null; task_types: { name: string; color: string | null } | { name: string; color: string | null }[] | null };
 type AppProfileRow = { id: string; email: string; full_name: string | null; control_number: string | null; role: "student" | "admin" | "owner"; active: boolean; can_edit_tasks: boolean; can_delete_tasks: boolean };
 type TaskForm = { title: string; courseId: string; typeId: string; dueDate: string; dueTime: string; status: string; priority: string; visible: boolean; materialUrl: string; platformUrl: string; notes: string; materialNeeded: string };
+type UploadDestination = { id: string; sectionId: string | null; name: string; path: string; source: "supabase" | "r2" };
 
 type AdminHubProps = { courses: CourseConfig[]; sections: SectionConfig[]; columns?: unknown[]; supabase: SupabaseBrowser | null; reload: () => Promise<void>; onCourses: (courses: CourseConfig[]) => void; onSections: (sections: SectionConfig[]) => void; onError: (error: string | null) => void };
 
@@ -157,18 +158,106 @@ function TaskAdminRow({ task, onUpdate }: { task: AdminTaskRow; onUpdate: (id: s
   return <article className="adminTaskRow" style={{ borderLeftColor: course?.color ?? type?.color ?? "#4285dc" }}><div><strong>{task.title}</strong><small>{course?.name ?? "Sin materia"} · {type?.name ?? "Tarea"} · {task.due_date} {task.due_time?.slice(0, 5) ?? ""}</small></div><select value={task.status} onChange={(event) => onUpdate(task.id, { status: event.target.value })}><option>Pendiente</option><option>Se entrega hoy</option><option>Entregado</option><option>Reprogramado</option><option>Cancelado</option></select><select value={task.priority} onChange={(event) => onUpdate(task.id, { priority: event.target.value })}><option>Alta</option><option>Media</option><option>Baja</option></select><label><input type="checkbox" checked={task.visible_to_students} onChange={(event) => onUpdate(task.id, { visible_to_students: event.target.checked })} />Visible</label></article>;
 }
 
-function CoursesPanel({ courses, onUpdate }: { courses: CourseConfig[]; onUpdate: (id: string, patch: Partial<CourseConfig>) => void }) { return <section className="adminCard"><div className="adminCardHead"><div><h3>Materias</h3><p>Define colores, iconos, tamaño y visibilidad.</p></div></div><div className="adminRows">{courses.map((course) => <div className="adminEditRow" key={course.id}><span className="swatch" style={{ background: course.color }} /><strong>{course.name}</strong><input aria-label="Color" type="color" value={course.color} onChange={(event) => onUpdate(course.id, { color: event.target.value })} /><input aria-label="Icono" value={course.icon} onChange={(event) => onUpdate(course.id, { icon: event.target.value })} /><select aria-label="Tamaño" value={course.cardSize} onChange={(event) => onUpdate(course.id, { cardSize: event.target.value as CardSize })}><option value="compact">Compacta</option><option value="medium">Media</option><option value="large">Grande</option></select><label className="adminSwitch"><input type="checkbox" checked={course.active} onChange={(event) => onUpdate(course.id, { active: event.target.checked })} />Activa</label></div>)}</div></section>; }
+function CoursesPanel({ courses, onUpdate }: { courses: CourseConfig[]; onUpdate: (id: string, patch: Partial<CourseConfig>) => void }) { return <section className="adminCard"><div className="adminCardHead"><div><h3>Materias</h3><p>Define colores, iconos y visibilidad general.</p></div></div><div className="adminRows">{courses.map((course) => <div className="adminEditRow" key={course.id}><span className="swatch" style={{ background: course.color }} /><strong>{course.name}</strong><input aria-label="Color" type="color" value={course.color} onChange={(event) => onUpdate(course.id, { color: event.target.value })} /><input aria-label="Icono" value={course.icon} onChange={(event) => onUpdate(course.id, { icon: event.target.value })} /><label className="adminSwitch"><input type="checkbox" checked={course.active} onChange={(event) => onUpdate(course.id, { active: event.target.checked })} />Activa</label></div>)}</div></section>; }
 
-function SectionsPanel({ sections, onUpdate }: { sections: SectionConfig[]; onUpdate: (id: string, patch: Partial<SectionConfig>) => void }) { return <section className="adminCard"><div className="adminCardHead"><div><h3>Secciones de materiales</h3><p>Personaliza carpetas y subsecciones del asset R2.</p></div></div><div className="adminRows">{sections.map((section) => <div className="adminEditRow section" key={section.id}><span className="swatch" style={{ background: section.color }} /><div className="adminNameBlock"><strong>{section.name}</strong><small>{section.path}</small></div><input aria-label="Color" type="color" value={section.color} onChange={(event) => onUpdate(section.id, { color: event.target.value })} /><input aria-label="Icono" value={section.icon} onChange={(event) => onUpdate(section.id, { icon: event.target.value })} /><select aria-label="Tamaño" value={section.cardSize} onChange={(event) => onUpdate(section.id, { cardSize: event.target.value as CardSize })}><option value="compact">Compacta</option><option value="medium">Media</option><option value="large">Grande</option></select><select aria-label="Preview" value={section.previewStyle} onChange={(event) => onUpdate(section.id, { previewStyle: event.target.value })}><option value="none">Sin preview</option><option value="icon">Icono</option><option value="thumbnail">Miniatura</option><option value="embedded">Embebido</option></select></div>)}</div></section>; }
+function SectionsPanel({ sections, onUpdate }: { sections: SectionConfig[]; onUpdate: (id: string, patch: Partial<SectionConfig>) => void }) { return <section className="adminCard"><div className="adminCardHead"><div><h3>Secciones de materiales</h3><p>Personaliza carpetas y subsecciones del asset R2.</p></div></div><div className="adminRows">{sections.map((section) => <div className="adminEditRow section" key={section.id}><span className="swatch" style={{ background: section.color }} /><div className="adminNameBlock"><strong>{section.name}</strong><small>{section.path}</small></div><input aria-label="Color" type="color" value={section.color} onChange={(event) => onUpdate(section.id, { color: event.target.value })} /><input aria-label="Icono" value={section.icon} onChange={(event) => onUpdate(section.id, { icon: event.target.value })} /><select aria-label="Preview" value={section.previewStyle} onChange={(event) => onUpdate(section.id, { previewStyle: event.target.value })}><option value="none">Sin preview</option><option value="icon">Icono</option><option value="thumbnail">Miniatura</option><option value="embedded">Embebido</option></select></div>)}</div></section>; }
 
 function MaterialUploadPanel({ sections, supabase, reload, onError }: { sections: SectionConfig[]; supabase: SupabaseBrowser | null; reload: () => Promise<void>; onError: (error: string | null) => void }) {
-  const [sectionId, setSectionId] = useState(sections[0]?.id ?? ""); const [title, setTitle] = useState(""); const [file, setFile] = useState<File | null>(null); const [busy, setBusy] = useState(false);
-  useEffect(() => { if (!sectionId && sections[0]) setSectionId(sections[0].id); }, [sections, sectionId]);
-  async function submit(event: React.FormEvent<HTMLFormElement>) { event.preventDefault(); const section = sections.find((item) => item.id === sectionId); if (!file || !section || !supabase) { onError("Selecciona un archivo y una sección válida."); return; } setBusy(true); try { const response = await fetch("/api/uploads/presign", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ fileName: file.name, contentType: file.type || "application/octet-stream", sectionPath: section.path }) }); const body = await response.json() as { key?: string; uploadUrl?: string; publicUrl?: string | null; error?: string }; if (!response.ok || !body.uploadUrl || !body.key) throw new Error(body.error ?? "No se pudo preparar la subida."); const upload = await fetch(body.uploadUrl, { method: "PUT", headers: { "Content-Type": file.type || "application/octet-stream" }, body: file }); if (!upload.ok) throw new Error("R2 rechazó el archivo."); const { error } = await supabase.from("materials").insert({ section_id: sectionId, title: title || file.name, file_name: file.name, material_type: file.type.includes("pdf") ? "PDF" : "Archivo", provider: "r2", r2_key: body.key, source_url: body.publicUrl, preview_url: body.publicUrl, content_type: file.type || null, size_bytes: file.size }); if (error) throw new Error(error.message); setTitle(""); setFile(null); await reload(); } catch (error) { onError(error instanceof Error ? error.message : "No se pudo subir el material."); } finally { setBusy(false); } }
-  return <section className="adminCard"><div className="adminCardHead"><div><h3>Subir material</h3><p>Guarda el archivo en R2 y registra la metadata en Supabase.</p></div></div><form className="adminUpload" onSubmit={submit}><label>Sección<select value={sectionId} onChange={(event) => setSectionId(event.target.value)}>{sections.map((section) => <option key={section.id} value={section.id}>{section.path}</option>)}</select></label><label>Título<input value={title} onChange={(event) => setTitle(event.target.value)} placeholder="Opcional" /></label><label>Archivo<input type="file" onChange={(event) => setFile(event.target.files?.[0] ?? null)} /></label><button className="primaryAction" disabled={busy} type="submit">{busy ? "Subiendo..." : "Subir a R2"}</button></form></section>;
+  const sectionDestinations = useMemo<UploadDestination[]>(
+    () => sections.map((section) => ({ id: `section:${section.id}`, sectionId: section.id, name: section.name, path: section.path, source: "supabase" })),
+    [sections],
+  );
+  const [destinations, setDestinations] = useState<UploadDestination[]>(sectionDestinations);
+  const [destinationId, setDestinationId] = useState(sectionDestinations[0]?.id ?? "");
+  const [title, setTitle] = useState("");
+  const [file, setFile] = useState<File | null>(null);
+  const [busy, setBusy] = useState(false);
+
+  useEffect(() => {
+    setDestinations((current) => mergeDestinations(sectionDestinations, current));
+  }, [sectionDestinations]);
+
+  useEffect(() => {
+    let cancelled = false;
+    async function loadDestinations() {
+      try {
+        const response = await fetch("/api/uploads/destinations", { credentials: "include" });
+        const body = await response.json() as { destinations?: UploadDestination[]; error?: string };
+        if (!response.ok) throw new Error(body.error ?? "No se pudieron cargar destinos R2.");
+        if (!cancelled) setDestinations(mergeDestinations(sectionDestinations, body.destinations ?? []));
+      } catch (error) {
+        if (!cancelled && sectionDestinations.length) setDestinations(sectionDestinations);
+        if (!cancelled && error instanceof Error) onError(error.message);
+      }
+    }
+    void loadDestinations();
+    return () => { cancelled = true; };
+  }, [sectionDestinations, onError]);
+
+  useEffect(() => {
+    if (!destinationId && destinations[0]) setDestinationId(destinations[0].id);
+    if (destinationId && destinations.length && !destinations.some((destination) => destination.id === destinationId)) {
+      setDestinationId(destinations[0].id);
+    }
+  }, [destinationId, destinations]);
+
+  async function submit(event: React.FormEvent<HTMLFormElement>) {
+    event.preventDefault();
+    const destination = destinations.find((item) => item.id === destinationId);
+    if (!file || !destination || !supabase) {
+      onError("Selecciona un archivo y un destino válido.");
+      return;
+    }
+
+    setBusy(true);
+    try {
+      const response = await fetch("/api/uploads/presign", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ fileName: file.name, contentType: file.type || "application/octet-stream", sectionPath: destination.path }),
+      });
+      const body = await response.json() as { key?: string; uploadUrl?: string; publicUrl?: string | null; error?: string };
+      if (!response.ok || !body.uploadUrl || !body.key) throw new Error(body.error ?? "No se pudo preparar la subida.");
+
+      const upload = await fetch(body.uploadUrl, { method: "PUT", headers: { "Content-Type": file.type || "application/octet-stream" }, body: file });
+      if (!upload.ok) throw new Error("R2 rechazó el archivo.");
+
+      const { error } = await supabase.from("materials").insert({
+        section_id: destination.sectionId,
+        title: title || file.name,
+        file_name: file.name,
+        material_type: file.type.includes("pdf") ? "PDF" : "Archivo",
+        provider: "r2",
+        r2_key: body.key,
+        source_url: body.publicUrl,
+        preview_url: body.publicUrl,
+        content_type: file.type || null,
+        size_bytes: file.size,
+      });
+      if (error) throw new Error(error.message);
+
+      setTitle("");
+      setFile(null);
+      await reload();
+    } catch (error) {
+      onError(error instanceof Error ? error.message : "No se pudo subir el material.");
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  return <section className="adminCard"><div className="adminCardHead"><div><h3>Subir material</h3><p>Guarda el archivo en R2 y registra la metadata en Supabase.</p></div></div><form className="adminUpload" onSubmit={submit}><label>Destino<select value={destinationId} onChange={(event) => setDestinationId(event.target.value)}>{destinations.map((destination) => <option key={destination.id} value={destination.id}>{destination.path}{destination.source === "r2" ? " (R2)" : ""}</option>)}</select></label><label>Título<input value={title} onChange={(event) => setTitle(event.target.value)} placeholder="Opcional" /></label><label>Archivo<input type="file" onChange={(event) => setFile(event.target.files?.[0] ?? null)} /></label><button className="primaryAction" disabled={busy} type="submit">{busy ? "Subiendo..." : "Subir a R2"}</button></form></section>;
 }
 
 function UsersPanel({ profiles, loading, onReload, onUpdate }: { profiles: AppProfileRow[]; loading: boolean; onReload: () => void; onUpdate: (id: string, patch: Partial<AppProfileRow>) => void }) { return <section className="adminCard"><div className="adminCardHead"><div><h3>Usuarios</h3><p>Consulta perfiles, roles y permisos operativos.</p></div><button type="button" onClick={onReload}>{loading ? "Cargando..." : "Recargar"}</button></div><div className="adminUserList">{profiles.map((profile) => <article className="adminUserRow" key={profile.id}><div><strong>{profile.full_name ?? profile.email}</strong><small>{profile.email} · {profile.control_number ?? "sin control"}</small></div><select value={profile.role} onChange={(event) => onUpdate(profile.id, { role: event.target.value as AppProfileRow["role"] })}><option value="student">Alumno</option><option value="admin">Admin</option><option value="owner">Owner</option></select><label><input type="checkbox" checked={profile.active} onChange={(event) => onUpdate(profile.id, { active: event.target.checked })} />Activo</label><label><input type="checkbox" checked={profile.can_edit_tasks} onChange={(event) => onUpdate(profile.id, { can_edit_tasks: event.target.checked })} />Edita</label></article>)}{!profiles.length && !loading ? <p className="muted">No se pudieron cargar usuarios o no hay permisos RLS para leerlos.</p> : null}</div></section>; }
+
+function mergeDestinations(primary: UploadDestination[], secondary: UploadDestination[]) {
+  const map = new Map<string, UploadDestination>();
+  for (const destination of [...secondary, ...primary]) {
+    map.set(destination.path.trim().replace(/\\/g, "/").replace(/\/+$/, "").toLowerCase(), destination);
+  }
+  return Array.from(map.values()).sort((a, b) => a.path.localeCompare(b.path, "es"));
+}
 
 function first<T>(value: T | T[] | null | undefined): T | null { return Array.isArray(value) ? value[0] ?? null : value ?? null; }
 function toDbPatch(patch: Partial<CourseConfig> | Partial<SectionConfig>) { const out: Record<string, unknown> = { updated_at: new Date().toISOString() }; if ("color" in patch) out.color = patch.color; if ("icon" in patch) out.icon = patch.icon; if ("cardSize" in patch) out.card_size = patch.cardSize; if ("previewStyle" in patch) out.preview_style = patch.previewStyle; if ("active" in patch) out.active = patch.active; return out; }

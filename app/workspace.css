@@ -399,3 +399,316 @@ a svg {
     justify-content: center;
   }
 }
+
+/* Final workspace scale overrides. */
+.mobileApp {
+  width: min(calc(100vw - 24px), 1180px);
+  max-width: 1180px;
+  padding-bottom: 68px;
+}
+
+.screen {
+  min-height: calc(100dvh - 126px);
+}
+
+.topAppBar {
+  height: 58px;
+  grid-template-columns: 38px 34px minmax(0, 1fr) 38px 38px;
+  gap: 8px;
+  padding: 0 12px;
+}
+
+.iconButton {
+  width: 38px;
+  height: 38px;
+}
+
+.appLogo {
+  width: 30px;
+  height: 30px;
+}
+
+.barTitle {
+  font-size: 18px;
+  font-weight: 700;
+  letter-spacing: 0;
+}
+
+.barSearch {
+  font-size: 16px;
+}
+
+.bottomNav {
+  width: min(calc(100vw - 24px), 1180px);
+  height: 64px;
+}
+
+.bottomNav button {
+  font-size: 12px;
+  line-height: 1.15;
+}
+
+.drawer {
+  width: min(88vw, 360px) !important;
+  max-height: 100dvh;
+  grid-template-rows: auto minmax(0, 1fr) auto;
+}
+
+.drawerHead {
+  height: auto;
+  min-height: 84px;
+  gap: 12px;
+  padding: 14px 16px;
+}
+
+.drawerHead img {
+  width: 44px;
+  height: 44px;
+}
+
+.drawerHead strong {
+  font-size: 17px;
+  letter-spacing: 0;
+}
+
+.drawerNav {
+  min-height: 0;
+  overflow-y: auto;
+  overscroll-behavior: contain;
+  padding: 6px 0;
+}
+
+.drawerItem {
+  min-height: 48px;
+  height: auto;
+  gap: 12px;
+  padding: 10px 16px;
+  font-size: 15px;
+}
+
+.drawerFooter {
+  padding: 12px 14px 14px;
+  gap: 10px;
+}
+
+.offline {
+  min-height: 38px;
+  padding: 0 10px;
+  font-size: 13px;
+}
+
+.accountRow {
+  grid-template-columns: 36px minmax(0, 1fr);
+  gap: 8px;
+  font-size: 13px;
+}
+
+.avatar {
+  width: 36px;
+  height: 36px;
+}
+
+.logoutButton {
+  grid-column: 1 / -1;
+  justify-content: center;
+}
+
+.accountRow .logoutButton {
+  min-height: 36px;
+  font-size: 13px;
+}
+
+.viewTabs {
+  height: 46px;
+  padding: 6px 14px 0;
+  font-size: 14px;
+}
+
+.viewTabs span,
+.viewTabs strong,
+.viewTabs button {
+  height: 40px;
+}
+
+.viewTabs button {
+  font-size: 12px;
+}
+
+.monthHead {
+  height: 44px;
+  grid-template-columns: 44px 1fr 44px;
+}
+
+.monthHead h2 {
+  font-size: 18px;
+}
+
+.monthHead button {
+  font-size: 28px;
+}
+
+.weekdays {
+  height: 28px;
+  font-size: 12px;
+}
+
+.calendarPane .dayCell,
+.dayCell {
+  min-height: 118px;
+}
+
+.calendarPane .dayNumber,
+.dayNumber {
+  min-width: 23px;
+  height: 23px;
+  margin: 0 0 6px;
+  font-size: 12px;
+}
+
+.groupTitle,
+.plainGroupTitle {
+  min-height: 42px;
+  height: auto;
+  padding: 8px 14px;
+  font-size: 18px;
+}
+
+.dataRow {
+  min-height: 66px;
+  padding: 10px 14px;
+}
+
+.rowMain {
+  gap: 3px;
+}
+
+.rowMain strong,
+.rowMain span {
+  font-size: 15px;
+  letter-spacing: 0;
+}
+
+.rowSide {
+  gap: 8px;
+}
+
+.taskListWorkspace {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) minmax(280px, 340px);
+  gap: 12px;
+  padding: 12px;
+  background: #f5f7fb;
+}
+
+.taskListWorkspace.completedOnly {
+  grid-template-columns: 1fr;
+}
+
+.taskListWorkspace .listScreen {
+  min-width: 0;
+  overflow: hidden;
+  border: 1px solid #d8e0ea;
+  border-radius: 8px;
+}
+
+.taskRow {
+  grid-template-columns: minmax(0, 1fr) auto;
+  align-items: center;
+  transition: background 0.16s ease, box-shadow 0.16s ease;
+}
+
+.taskRow.selected {
+  background: #f0f8ff;
+  box-shadow: inset 0 0 0 1px #9bc7ef;
+}
+
+.taskRowButton {
+  min-width: 0;
+  border: 0;
+  background: transparent;
+  color: inherit;
+  display: grid;
+  gap: 4px;
+  padding: 0;
+  text-align: left;
+  cursor: pointer;
+}
+
+.taskRowButton .rowMain {
+  display: grid;
+}
+
+.rowDue {
+  color: #667085;
+  font-size: 12px;
+  font-weight: 700;
+}
+
+.taskListWorkspace .taskDetailPanel {
+  top: 70px;
+}
+
+.adminEditRow {
+  grid-template-columns: 22px minmax(170px, 1fr) 64px minmax(100px, 130px) auto;
+}
+
+.adminEditRow.section {
+  grid-template-columns: 22px minmax(250px, 1fr) 64px minmax(100px, 130px) minmax(120px, 150px);
+}
+
+@media (max-width: 900px) {
+  .mobileApp,
+  .bottomNav {
+    width: 100vw;
+    max-width: 100vw;
+  }
+
+  .screen {
+    min-height: calc(100dvh - 122px);
+  }
+
+  .taskListWorkspace {
+    grid-template-columns: 1fr;
+    padding: 10px;
+  }
+
+  .taskListWorkspace .taskDetailPanel {
+    position: static;
+  }
+}
+
+@media (max-width: 620px) {
+  .topAppBar {
+    height: 56px;
+    grid-template-columns: 36px 30px minmax(0, 1fr) 36px 36px;
+    gap: 6px;
+    padding-inline: 10px;
+  }
+
+  .barTitle {
+    font-size: 17px;
+  }
+
+  .bottomNav {
+    height: 62px;
+  }
+
+  .bottomNav button {
+    font-size: 11px;
+  }
+
+  .calendarPane .dayCell,
+  .dayCell {
+    min-height: 94px;
+  }
+
+  .rowMain strong,
+  .rowMain span {
+    font-size: 14px;
+  }
+
+  .adminEditRow,
+  .adminEditRow.section {
+    grid-template-columns: 1fr;
+  }
+}
