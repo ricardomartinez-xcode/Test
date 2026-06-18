@@ -126,6 +126,17 @@ export async function GET(request: Request) {
       materials,
     });
   } catch (error) {
+    if (error instanceof Error && error.message.includes("Missing Supabase env vars")) {
+      return NextResponse.json({
+        ok: true,
+        query: "",
+        sectionId: "",
+        summary: { sections: 0, materials: 0, providers: {} },
+        sections: [],
+        materials: [],
+      });
+    }
+
     return NextResponse.json(
       { error: error instanceof Error ? error.message : "No se pudo cargar la biblioteca." },
       { status: 500 },

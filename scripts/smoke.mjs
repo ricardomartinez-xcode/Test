@@ -87,12 +87,20 @@ async function checkMaterialsLibraryContract() {
   }
 }
 
+async function checkProtectedOperationsRoutes() {
+  for (const path of ["/api/notifications", "/api/reports/operations", "/api/admin/notifications"]) {
+    const response = await fetch(new URL(path, baseUrl));
+    assert.ok([401, 403].includes(response.status), `${path} should require an authenticated session, got ${response.status}`);
+  }
+}
+
 const checks = [
   ["home", checkHome],
   ["health", checkHealth],
   ["tasks", checkTasks],
   ["upload destinations", checkUploadDestinations],
   ["materials library contract", checkMaterialsLibraryContract],
+  ["protected operations routes", checkProtectedOperationsRoutes],
 ];
 
 console.log(`Running PSCV smoke tests against ${baseUrl.toString()}`);

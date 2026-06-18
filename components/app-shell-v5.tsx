@@ -3,6 +3,7 @@
 import { useCallback, useEffect, useMemo, useState, type CSSProperties } from "react";
 import {
   ArrowLeft,
+  Bell,
   CalendarDays,
   CalendarClock,
   Check,
@@ -60,6 +61,15 @@ type Profile = {
   fullName: string;
   role: "student" | "admin" | "owner";
   preferences: UserPreferences;
+  canEditTasks: boolean;
+  canDeleteTasks: boolean;
+  canManageMaterials: boolean;
+  canManageUsers: boolean;
+  canManageSettings: boolean;
+  canManageGroup: boolean;
+  canManageNotifications: boolean;
+  canViewReports: boolean;
+  canManageR2: boolean;
 };
 
 type UiTask = Task & {
@@ -137,6 +147,20 @@ type GroupValueRow = {
   value: boolean;
 };
 
+type AppNotification = {
+  id: string;
+  kind: string;
+  priority: "low" | "normal" | "high";
+  title: string;
+  body: string;
+  entity: string | null;
+  entity_id: string | null;
+  action_url: string | null;
+  scheduled_for: string;
+  read_at: string | null;
+  created_at: string;
+};
+
 const fallbackPrefs: UserPreferences = {
   calendarView: "month",
   taskDensity: "medium",
@@ -153,6 +177,15 @@ const demoProfile: Profile = {
   fullName: "Administrador demo",
   role: "owner",
   preferences: fallbackPrefs,
+  canEditTasks: true,
+  canDeleteTasks: true,
+  canManageMaterials: true,
+  canManageUsers: true,
+  canManageSettings: true,
+  canManageGroup: true,
+  canManageNotifications: true,
+  canViewReports: true,
+  canManageR2: true,
 };
 
 const demoCourses: CourseConfig[] = [
@@ -212,6 +245,8 @@ export function AppShellV5({ initialTasks, initialMembers }: Props) {
   const [searchOpen, setSearchOpen] = useState(false);
   const [query, setQuery] = useState("");
   const [error, setError] = useState<string | null>(null);
+  const [notifications, setNotifications] = useState<AppNotification[]>([]);
+  const [notificationOpen, setNotificationOpen] = useState(false);
   const [tasks, setTasks] = useState<UiTask[]>(initialTasks);
   const [courses, setCourses] = useState<CourseConfig[]>(hasSupabaseConfig ? [] : demoCourses);
   const [sections, setSections] = useState<SectionConfig[]>(hasSupabaseConfig ? [] : demoSections);
@@ -257,6 +292,12 @@ export function AppShellV5({ initialTasks, initialMembers }: Props) {
     if (supabase && email) void loadData(supabase, email);
   }, [supabase, email]);
 
+  useEffect(() => {
+    if (supabase && profile) void loadNotifications();
+    if (!supabase) setNotifications([]);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [supabase, profile?.id]);
+
   async function loadData(client: SupabaseBrowser, accountEmail: string) {
     setError(null);
     const normalized = accountEmail.toLowerCase();
@@ -299,7 +340,38 @@ export function AppShellV5({ initialTasks, initialMembers }: Props) {
     if (supabase) await supabase.auth.signOut();
     setEmail(null);
     setProfile(null);
+    setNotifications([]);
+    setNotificationOpen(false);
     setDrawerOpen(false);
+  }
+
+  async function loadNotifications() {
+    try {
+      const response = await fetch("/api/notifications", { credentials: "include" });
+      const body = await response.json() as { notifications?: AppNotification[]; error?: string };
+      if (!response.ok) throw new Error(body.error ?? "No se pudieron cargar avisos.");
+      setNotifications(body.notifications ?? []);
+    } catch (notificationError) {
+      setError(notificationError instanceof Error ? notificationError.message : "No se pudieron cargar avisos.");
+    }
+  }
+
+  async function updateNotifications(ids: string[], action: "read" | "dismiss") {
+    if (!ids.length) return;
+    try {
+      const response = await fetch("/api/notifications", {
+        method: "PATCH",
+        credentials: "include",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ ids, action }),
+      });
+      const body = await response.json().catch(() => ({})) as { error?: string };
+      if (!response.ok) throw new Error(body.error ?? "No se pudo actualizar el aviso.");
+      if (action === "dismiss") setNotifications((current) => current.filter((item) => !ids.includes(item.id)));
+      else setNotifications((current) => current.map((item) => ids.includes(item.id) ? { ...item, read_at: new Date().toISOString() } : item));
+    } catch (notificationError) {
+      setError(notificationError instanceof Error ? notificationError.message : "No se pudo actualizar el aviso.");
+    }
   }
 
   function enterLocalDemo() {
@@ -450,6 +522,7 @@ export function AppShellV5({ initialTasks, initialMembers }: Props) {
     ? shownTasks.find((task) => task.id === selectedTaskId) ?? null
     : null;
   const activeNavTab = tab === "taskDetail" ? detailOrigin : tab;
+  const unreadNotifications = notifications.filter((notification) => !notification.read_at).length;
 
   function go(next: Tab) {
     if (["completed", "group", "admin"].includes(next) && role !== "admin") return;
@@ -462,6 +535,14 @@ export function AppShellV5({ initialTasks, initialMembers }: Props) {
     setDetailOrigin(origin);
     setTab("taskDetail");
     setDrawerOpen(false);
+  }
+
+  function openNotification(notification: AppNotification) {
+    void updateNotifications([notification.id], "read");
+    setNotificationOpen(false);
+    if (notification.entity === "tasks" && notification.entity_id) {
+      openTaskDetail(notification.entity_id, "tasks");
+    }
   }
 
   return (
@@ -477,6 +558,10 @@ export function AppShellV5({ initialTasks, initialMembers }: Props) {
           )}
         </div>
         <button className="iconButton" aria-label="Buscar" title="Buscar" onClick={() => setSearchOpen((value) => !value)} type="button"><Search size={22} /></button>
+        <button className="iconButton notificationButton" aria-label="Avisos" title="Avisos" onClick={() => setNotificationOpen((value) => !value)} type="button">
+          <Bell size={21} />
+          {unreadNotifications ? <span>{unreadNotifications > 9 ? "9+" : unreadNotifications}</span> : null}
+        </button>
         <button className="iconButton" aria-label="Actualizar" title="Actualizar" onClick={() => email && supabase ? void loadData(supabase, email) : undefined} type="button"><RefreshCw size={21} /></button>
       </header>
 
@@ -491,6 +576,14 @@ export function AppShellV5({ initialTasks, initialMembers }: Props) {
         onSignOut={signOut}
       />
       {error ? <div className="systemBanner">{error}</div> : null}
+      <NotificationTray
+        open={notificationOpen}
+        notifications={notifications}
+        onClose={() => setNotificationOpen(false)}
+        onOpen={openNotification}
+        onRead={(ids) => void updateNotifications(ids, "read")}
+        onDismiss={(ids) => void updateNotifications(ids, "dismiss")}
+      />
 
       <section className="screen">
         {tab === "calendar" ? (
@@ -514,6 +607,7 @@ export function AppShellV5({ initialTasks, initialMembers }: Props) {
           <AdminHub
             courses={courses}
             sections={sections}
+            profile={profile}
             supabase={supabase}
             reload={() => email && supabase ? loadData(supabase, email) : Promise.resolve()}
             onCourses={setCourses}
@@ -578,6 +672,52 @@ function Drawer({ open, email, role, active, sourceLabel, onClose, onSelect, onS
         </div>
       </aside>
     </>
+  );
+}
+
+function NotificationTray({
+  open,
+  notifications,
+  onClose,
+  onOpen,
+  onRead,
+  onDismiss,
+}: {
+  open: boolean;
+  notifications: AppNotification[];
+  onClose: () => void;
+  onOpen: (notification: AppNotification) => void;
+  onRead: (ids: string[]) => void;
+  onDismiss: (ids: string[]) => void;
+}) {
+  if (!open) return null;
+
+  const unreadIds = notifications.filter((notification) => !notification.read_at).map((notification) => notification.id);
+
+  return (
+    <section className="notificationTray" aria-label="Avisos">
+      <div className="notificationTrayHead">
+        <div><strong>Avisos</strong><span>{notifications.length} activos</span></div>
+        <button aria-label="Cerrar avisos" onClick={onClose} type="button"><X size={16} /></button>
+      </div>
+      <div className="notificationTrayActions">
+        <button type="button" onClick={() => onRead(unreadIds)} disabled={!unreadIds.length}>Marcar leídos</button>
+        <button type="button" onClick={() => onDismiss(notifications.map((notification) => notification.id))} disabled={!notifications.length}>Limpiar</button>
+      </div>
+      <div className="notificationList">
+        {notifications.map((notification) => (
+          <article className={`notificationItem ${notification.read_at ? "" : "unread"} priority-${notification.priority}`} key={notification.id}>
+            <button type="button" onClick={() => onOpen(notification)}>
+              <strong>{notification.title}</strong>
+              {notification.body ? <span>{notification.body}</span> : null}
+              <small>{formatOptionalSync(notification.scheduled_for)}</small>
+            </button>
+            <button aria-label="Ocultar aviso" title="Ocultar" onClick={() => onDismiss([notification.id])} type="button"><X size={14} /></button>
+          </article>
+        ))}
+        {!notifications.length ? <p className="notificationEmpty">No hay avisos pendientes.</p> : null}
+      </div>
+    </section>
   );
 }
 
@@ -1191,7 +1331,26 @@ function asOne<T>(value: T | T[] | null | undefined): T | null { return Array.is
 function cardSize(value: unknown): CardSize { return value === "compact" || value === "large" ? value : "medium"; }
 function delivery(value: unknown): DeliveryType { const text = String(value ?? "Tarea"); return deliveryTypes.includes(text as DeliveryType) ? text as DeliveryType : "Tarea"; }
 function status(value: unknown): TaskStatus { const text = String(value ?? "Pendiente"); return statuses.includes(text as TaskStatus) ? text as TaskStatus : "Pendiente"; }
-function toProfile(row: Record<string, unknown>): Profile { return { id: String(row.id), email: String(row.email), fullName: String(row.full_name ?? row.email), role: row.role === "owner" ? "owner" : row.role === "admin" ? "admin" : "student", preferences: normalizePreferences(row.preferences) }; }
+function toProfile(row: Record<string, unknown>): Profile {
+  const role = row.role === "owner" ? "owner" : row.role === "admin" ? "admin" : "student";
+  const owner = role === "owner";
+  return {
+    id: String(row.id),
+    email: String(row.email),
+    fullName: String(row.full_name ?? row.email),
+    role,
+    preferences: normalizePreferences(row.preferences),
+    canEditTasks: owner || Boolean(row.can_edit_tasks),
+    canDeleteTasks: owner || Boolean(row.can_delete_tasks),
+    canManageMaterials: owner || Boolean(row.can_manage_materials),
+    canManageUsers: owner || Boolean(row.can_manage_users),
+    canManageSettings: owner || Boolean(row.can_manage_settings),
+    canManageGroup: owner || Boolean(row.can_manage_group),
+    canManageNotifications: owner || Boolean(row.can_manage_notifications),
+    canViewReports: owner || Boolean(row.can_view_reports),
+    canManageR2: owner || Boolean(row.can_manage_r2),
+  };
+}
 function toCourse(row: Record<string, unknown>): CourseConfig { return { id: String(row.id), name: String(row.name), shortName: String(row.short_name ?? row.name), color: String(row.color ?? "#4285dc"), icon: String(row.icon ?? "book"), cardSize: cardSize(row.card_size), active: Boolean(row.active ?? true) }; }
 function toSection(row: Record<string, unknown>): SectionConfig { return { id: String(row.id), name: String(row.name), path: String(row.path), color: String(row.color ?? "#4285dc"), icon: String(row.icon ?? "folder"), cardSize: cardSize(row.card_size), previewStyle: String(row.preview_style ?? "thumbnail"), active: Boolean(row.active ?? true) }; }
 function toTask(row: Record<string, unknown>): UiTask { const course = asOne(row.courses as Record<string, unknown> | Record<string, unknown>[] | null); const type = asOne(row.task_types as Record<string, unknown> | Record<string, unknown>[] | null); const dueDate = String(row.due_date); const daysRemaining = calculateDaysRemaining(dueDate); const next = deriveStatus(status(row.status), daysRemaining); return { id: String(row.id), course: String(course?.name ?? "Sin materia"), dueDate, dueTime: String(row.due_time ?? "23:59").slice(0, 5), title: String(row.title ?? "Sin título"), materialNeeded: row.material_needed ? String(row.material_needed) : "", materialUrl: row.material_url ? String(row.material_url) : "", deliveryType: delivery(type?.name), status: next, daysRemaining, notes: row.notes ? String(row.notes) : "", platformUrl: row.platform_url ? String(row.platform_url) : "", visibleToReaders: Boolean(row.visible_to_students), courseColor: course?.color ? String(course.color) : undefined, taskTypeColor: type?.color ? String(type.color) : undefined, courseCardSize: cardSize(course?.card_size) }; }
