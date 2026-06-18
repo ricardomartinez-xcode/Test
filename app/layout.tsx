@@ -10,6 +10,7 @@ import "./admin-hub.css";
 import "./admin-diagnostics.css";
 import "./admin-fixes.css";
 import "./workspace.css";
+import "./operational-polish.css";
 
 export const metadata: Metadata = {
   title: "PSCV Room 2.0",
