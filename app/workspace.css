@@ -13,7 +13,8 @@ a svg {
 .materialCardV2,
 .drawer,
 .offline,
-.taskDetailPanel {
+.taskDetailPanel,
+.taskCreateModal {
   border-radius: 8px;
 }
 
@@ -119,10 +120,39 @@ a svg {
 }
 
 .calendarPane .dayNumber {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 4px;
   min-width: 25px;
   height: 25px;
   margin: 0 0 7px;
   font-size: 13px;
+}
+
+.calendarPane button.dayNumber {
+  border: 0;
+  background: transparent;
+  cursor: pointer;
+  padding: 0 6px;
+}
+
+.calendarPane .dayCell.canCreateTask {
+  cursor: pointer;
+  transition: background 0.16s ease;
+}
+
+.calendarPane .dayCell.canCreateTask:hover {
+  background: #f8fbff;
+}
+
+.dayCreateIcon {
+  color: #1f4f86;
+  flex: 0 0 auto;
+}
+
+.dayNumber.today .dayCreateIcon {
+  color: #fff;
 }
 
 .calendarPane .eventStack {
@@ -648,6 +678,78 @@ a svg {
   top: 70px;
 }
 
+.taskCreateDock {
+  position: fixed;
+  right: max(18px, calc((100vw - 860px) / 2 + 18px));
+  bottom: 82px;
+  z-index: 26;
+  min-height: 46px;
+  border: 0;
+  border-radius: 999px;
+  background: #082a4f;
+  color: #fff;
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  padding: 0 16px;
+  font-size: 14px;
+  font-weight: 900;
+  box-shadow: 0 12px 30px rgba(8, 42, 79, 0.28);
+  cursor: pointer;
+}
+
+.taskCreateDock svg {
+  flex: 0 0 auto;
+}
+
+.taskModalBackdrop {
+  position: fixed;
+  inset: 0;
+  z-index: 58;
+  background: rgba(15, 23, 42, 0.48);
+}
+
+.taskCreateModal {
+  position: fixed;
+  left: 50%;
+  top: 50%;
+  z-index: 59;
+  width: min(640px, calc(100vw - 28px));
+  max-height: min(760px, calc(100dvh - 28px));
+  overflow: auto;
+  transform: translate(-50%, -50%);
+  border: 1px solid #d8e0ea;
+  background: #fff;
+  box-shadow: 0 24px 70px rgba(15, 23, 42, 0.24);
+  padding: 16px;
+}
+
+.taskCreateHead {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 12px;
+  margin-bottom: 14px;
+}
+
+.taskCreateHead h2 {
+  margin: 3px 0 0;
+  font-size: 24px;
+  letter-spacing: 0;
+}
+
+.modalCloseButton {
+  width: 38px;
+  height: 38px;
+  border: 1px solid #d0d7e2;
+  background: #fff;
+}
+
+.taskCreateForm .taskCheck,
+.taskCreateForm .primaryAction {
+  grid-column: 1 / -1;
+}
+
 .adminEditRow {
   grid-template-columns: 22px minmax(170px, 1fr) 64px minmax(100px, 130px) auto;
 }
@@ -674,6 +776,10 @@ a svg {
 
   .taskListWorkspace .taskDetailPanel {
     position: static;
+  }
+
+  .taskCreateDock {
+    right: 14px;
   }
 }
 

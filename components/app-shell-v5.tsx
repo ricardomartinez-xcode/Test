@@ -89,6 +89,30 @@ type SectionConfig = {
   active: boolean;
 };
 
+type TaskTypeConfig = {
+  id: string;
+  name: string;
+  color: string | null;
+  icon: string | null;
+};
+
+type TaskForm = {
+  title: string;
+  courseId: string;
+  typeId: string;
+  dueDate: string;
+  dueTime: string;
+  status: TaskStatus;
+  priority: string;
+  visible: boolean;
+  materialUrl: string;
+  platformUrl: string;
+  notes: string;
+  materialNeeded: string;
+};
+
+type TaskFormChange = <K extends keyof TaskForm>(key: K, value: TaskForm[K]) => void;
+
 type BooleanGroupColumn = {
   id: string;
   label: string;
@@ -147,11 +171,36 @@ const demoSections: SectionConfig[] = [
   { id: "aprendizaje", name: "Teorias del Aprendizaje", path: "Teorias del Aprendizaje", color: "#d97706", icon: "folder", cardSize: "medium", previewStyle: "thumbnail", active: true },
 ];
 
+const demoTaskTypes: TaskTypeConfig[] = deliveryTypes.map((name) => ({
+  id: name.toLowerCase(),
+  name,
+  color: null,
+  icon: null,
+}));
+
 const fixedBooleanColumns: BooleanGroupColumn[] = [
   { id: "attended", label: "Asistencia", source: "attended", fixed: true },
   { id: "licenseIssue", label: "Licencia", source: "licenseIssue", fixed: true },
   { id: "authIssue", label: "Acceso", source: "authIssue", fixed: true },
 ];
+
+function newTaskForm(defaults: Partial<TaskForm> = {}): TaskForm {
+  return {
+    title: "",
+    courseId: "",
+    typeId: "",
+    dueDate: new Date().toISOString().slice(0, 10),
+    dueTime: "23:59",
+    status: "Pendiente",
+    priority: "Media",
+    visible: true,
+    materialUrl: "",
+    platformUrl: "",
+    notes: "",
+    materialNeeded: "",
+    ...defaults,
+  };
+}
 
 export function AppShellV5({ initialTasks, initialMembers }: Props) {
   const supabase = useMemo(() => createSupabaseBrowserClient(), []);
@@ -166,10 +215,15 @@ export function AppShellV5({ initialTasks, initialMembers }: Props) {
   const [tasks, setTasks] = useState<UiTask[]>(initialTasks);
   const [courses, setCourses] = useState<CourseConfig[]>(hasSupabaseConfig ? [] : demoCourses);
   const [sections, setSections] = useState<SectionConfig[]>(hasSupabaseConfig ? [] : demoSections);
+  const [taskTypes, setTaskTypes] = useState<TaskTypeConfig[]>(hasSupabaseConfig ? [] : demoTaskTypes);
   const [members, setMembers] = useState<UiGroupMember[]>(initialMembers);
   const [cursor, setCursor] = useState(new Date());
   const [selectedTaskId, setSelectedTaskId] = useState<string | null>(initialTasks[0]?.id ?? null);
   const [detailOrigin, setDetailOrigin] = useState<DetailOrigin>("calendar");
+  const [taskFormOpen, setTaskFormOpen] = useState(false);
+  const [taskForm, setTaskForm] = useState<TaskForm>(() => newTaskForm());
+  const [taskFormSource, setTaskFormSource] = useState<"calendar" | "tasks">("tasks");
+  const [creatingTask, setCreatingTask] = useState(false);
 
   const prefs = profile?.preferences ?? fallbackPrefs;
   const role: Role = profile?.role === "admin" || profile?.role === "owner" ? "admin" : "reader";
@@ -234,6 +288,8 @@ export function AppShellV5({ initialTasks, initialMembers }: Props) {
     setCourses((coursesRes.data ?? []).map(toCourse));
     setSections((sectionsRes.data ?? []).map(toSection));
     setTasks((tasksRes.data ?? []).map(toTask));
+    const taskTypeRes = await client.from("task_types").select("id,name,color,icon").eq("active", true).order("sort_order");
+    if (!taskTypeRes.error) setTaskTypes((taskTypeRes.data ?? []) as TaskTypeConfig[]);
     if (!membersRes.error && membersRes.data?.length) {
       setMembers(membersRes.data.map(toGroupMember));
     }
@@ -251,8 +307,91 @@ export function AppShellV5({ initialTasks, initialMembers }: Props) {
     setProfile(demoProfile);
     setCourses(demoCourses);
     setSections(demoSections);
+    setTaskTypes(demoTaskTypes);
     setMembers(initialMembers);
     setTab("calendar");
+  }
+
+  function openTaskForm(source: "calendar" | "tasks", dueDate?: string) {
+    setTaskFormSource(source);
+    setTaskForm(newTaskForm({
+      dueDate: dueDate || new Date().toISOString().slice(0, 10),
+      courseId: courses[0]?.id || "",
+      typeId: taskTypes[0]?.id || "",
+    }));
+    setTaskFormOpen(true);
+  }
+
+  function setTaskFormField<K extends keyof TaskForm>(key: K, value: TaskForm[K]) {
+    setTaskForm((current) => ({ ...current, [key]: value }));
+  }
+
+  async function createTask(form: TaskForm) {
+    const title = form.title.trim();
+    if (!title) return;
+
+    setCreatingTask(true);
+    setError(null);
+
+    if (!supabase) {
+      const course = courses.find((item) => item.id === form.courseId);
+      const type = taskTypes.find((item) => item.id === form.typeId);
+      const id = `local-${Date.now()}`;
+      const dueDate = form.dueDate || new Date().toISOString().slice(0, 10);
+      const dueTime = form.dueTime || "23:59";
+      const nextTask: UiTask = {
+        id,
+        course: course?.name ?? "Sin materia",
+        dueDate,
+        dueTime,
+        title,
+        materialNeeded: form.materialNeeded.trim(),
+        materialUrl: form.materialUrl.trim(),
+        deliveryType: delivery(type?.name),
+        status: form.status,
+        daysRemaining: calculateDaysRemaining(dueDate),
+        notes: form.notes.trim(),
+        platformUrl: form.platformUrl.trim(),
+        visibleToReaders: form.visible,
+        courseColor: course?.color,
+        taskTypeColor: type?.color ?? undefined,
+        courseCardSize: course?.cardSize,
+      };
+      setTasks((current) => [...current, nextTask]);
+      setSelectedTaskId(id);
+      setTaskFormOpen(false);
+      setCreatingTask(false);
+      return;
+    }
+
+    const { data, error: insertError } = await supabase
+      .from("tasks")
+      .insert({
+        title,
+        course_id: form.courseId || null,
+        task_type_id: form.typeId || null,
+        due_date: form.dueDate,
+        due_time: form.dueTime || "23:59",
+        status: form.status,
+        priority: form.priority,
+        visible_to_students: form.visible,
+        material_url: form.materialUrl.trim() || null,
+        platform_url: form.platformUrl.trim() || null,
+        notes: form.notes.trim() || null,
+        material_needed: form.materialNeeded.trim() || null,
+      })
+      .select("id")
+      .single();
+
+    if (insertError) {
+      setError(insertError.message);
+    } else {
+      if (email) await loadData(supabase, email);
+      setSelectedTaskId(String(data.id));
+      setTaskFormOpen(false);
+    }
+
+    setCreatingTask(false);
   }
 
   async function markDone(id: string) {
@@ -357,13 +496,13 @@ export function AppShellV5({ initialTasks, initialMembers }: Props) {
         {tab === "calendar" ? (
           <>
             <WorkspaceOverview tasks={visibleTasks} completedCount={completedTasks.length} membersCount={members.length} role={role} onGo={go} />
-            <Calendar tasks={visibleTasks} cursor={cursor} setCursor={setCursor} selectedTask={calendarSelectedTask} onSelect={(id) => openTaskDetail(id, "calendar")} />
+            <Calendar tasks={visibleTasks} cursor={cursor} setCursor={setCursor} selectedTask={calendarSelectedTask} onSelect={(id) => openTaskDetail(id, "calendar")} onCreateDate={role === "admin" ? (date) => openTaskForm("calendar", date) : undefined} />
           </>
         ) : null}
         {tab === "tasks" ? (
           <>
             <WorkspaceOverview tasks={visibleTasks} completedCount={completedTasks.length} membersCount={members.length} role={role} onGo={go} compact />
-            <TaskList tasks={shownTasks} role={role} selectedTask={listSelectedTask} density={prefs.taskDensity} onSelect={(id) => openTaskDetail(id, "tasks")} onDone={(id) => void markDone(id)} />
+            <TaskList tasks={shownTasks} role={role} selectedTask={listSelectedTask} density={prefs.taskDensity} onSelect={(id) => openTaskDetail(id, "tasks")} onDone={(id) => void markDone(id)} onCreate={role === "admin" ? () => openTaskForm("tasks") : undefined} />
           </>
         ) : null}
         {tab === "materials" ? <MaterialLibrary previewSize={prefs.materialPreviewSize} globalQuery={query} /> : null}
@@ -383,6 +522,18 @@ export function AppShellV5({ initialTasks, initialMembers }: Props) {
           />
         ) : null}
       </section>
+
+      <TaskCreateModal
+        open={taskFormOpen}
+        source={taskFormSource}
+        form={taskForm}
+        courses={courses}
+        taskTypes={taskTypes}
+        busy={creatingTask}
+        onClose={() => setTaskFormOpen(false)}
+        onChange={setTaskFormField}
+        onSubmit={(form) => void createTask(form)}
+      />
 
       <nav className={`bottomNav ${role === "admin" ? "adminBottomNav" : ""}`}>
         <button className={activeNavTab === "calendar" ? "active" : ""} onClick={() => go("calendar")} type="button"><CalendarDays size={22} />Calendario</button>
@@ -475,7 +626,7 @@ function WorkspaceOverview({ tasks, completedCount, membersCount, role, onGo, co
   );
 }
 
-function Calendar({ tasks, cursor, setCursor, selectedTask, onSelect }: { tasks: UiTask[]; cursor: Date; setCursor: (date: Date) => void; selectedTask: UiTask | null; onSelect: (id: string) => void }) {
+function Calendar({ tasks, cursor, setCursor, selectedTask, onSelect, onCreateDate }: { tasks: UiTask[]; cursor: Date; setCursor: (date: Date) => void; selectedTask: UiTask | null; onSelect: (id: string) => void; onCreateDate?: (date: string) => void }) {
   const year = cursor.getFullYear();
   const month = cursor.getMonth();
   const cells = monthCells(year, month);
@@ -493,8 +644,24 @@ function Calendar({ tasks, cursor, setCursor, selectedTask, onSelect }: { tasks:
             const key = day ? `${year}-${String(month + 1).padStart(2, "0")}-${String(day).padStart(2, "0")}` : "";
             const dayTasks = tasks.filter((task) => task.dueDate === key);
             return (
-              <div className="dayCell" key={`${key}-${index}`}>
-                {day ? <span className={`dayNumber ${key === today ? "today" : ""}`}>{String(day).padStart(2, "0")}</span> : null}
+              <div
+                className={`dayCell ${day && onCreateDate ? "canCreateTask" : ""}`}
+                key={`${key}-${index}`}
+                title={day && onCreateDate ? "Crear tarea en esta fecha" : undefined}
+              >
+                {day && onCreateDate ? (
+                  <button
+                    className={`dayNumber ${key === today ? "today" : ""}`}
+                    aria-label={`Crear tarea el ${key}`}
+                    onClick={() => onCreateDate(key)}
+                    type="button"
+                  >
+                    {String(day).padStart(2, "0")}
+                    <Plus className="dayCreateIcon" size={12} />
+                  </button>
+                ) : day ? (
+                  <span className={`dayNumber ${key === today ? "today" : ""}`}>{String(day).padStart(2, "0")}</span>
+                ) : null}
                 <div className="eventStack">
                   {dayTasks.slice(0, 3).map((task) => (
                     <button
@@ -502,7 +669,10 @@ function Calendar({ tasks, cursor, setCursor, selectedTask, onSelect }: { tasks:
                       style={{ borderLeftColor: task.taskTypeColor ?? task.courseColor ?? "#4285dc" } as CSSProperties}
                       key={task.id}
                       title={`${task.dueTime} ${task.title}`}
-                      onClick={() => onSelect(task.id)}
+                      onClick={(event) => {
+                        event.stopPropagation();
+                        onSelect(task.id);
+                      }}
                       type="button"
                     >
                       <span>{task.dueTime}</span>
@@ -510,7 +680,16 @@ function Calendar({ tasks, cursor, setCursor, selectedTask, onSelect }: { tasks:
                     </button>
                   ))}
                   {dayTasks.length > 3 ? (
-                    <button className="moreEvents" onClick={() => onSelect(dayTasks[3].id)} type="button">+{dayTasks.length - 3}</button>
+                    <button
+                      className="moreEvents"
+                      onClick={(event) => {
+                        event.stopPropagation();
+                        onSelect(dayTasks[3].id);
+                      }}
+                      type="button"
+                    >
+                      +{dayTasks.length - 3}
+                    </button>
                   ) : null}
                 </div>
               </div>
@@ -592,6 +771,7 @@ function TaskList({
   completedOnly = false,
   onSelect,
   onDone,
+  onCreate,
 }: {
   tasks: UiTask[];
   role: Role;
@@ -600,6 +780,7 @@ function TaskList({
   completedOnly?: boolean;
   onSelect: (id: string) => void;
   onDone: (id: string) => void;
+  onCreate?: () => void;
 }) {
   const grouped = groupTasks(tasks);
   return (
@@ -629,7 +810,72 @@ function TaskList({
         })}
         {!tasks.length ? <section className="emptyLibrary"><strong>{completedOnly ? "Sin tareas entregadas" : "Sin tareas activas"}</strong><p>{completedOnly ? "Cuando marques una tarea como entregada aparecerá aquí." : "Las tareas entregadas se muestran solamente en Entregadas."}</p></section> : null}
       </div>
+      {onCreate ? (
+        <button className="taskCreateDock" onClick={onCreate} type="button">
+          <Plus size={18} />
+          <span>Nueva tarea</span>
+        </button>
+      ) : null}
     </div>
+  );
+}
+
+function TaskCreateModal({
+  open,
+  source,
+  form,
+  courses,
+  taskTypes,
+  busy,
+  onClose,
+  onChange,
+  onSubmit,
+}: {
+  open: boolean;
+  source: "calendar" | "tasks";
+  form: TaskForm;
+  courses: CourseConfig[];
+  taskTypes: TaskTypeConfig[];
+  busy: boolean;
+  onClose: () => void;
+  onChange: TaskFormChange;
+  onSubmit: (form: TaskForm) => void;
+}) {
+  if (!open) return null;
+
+  function submit(event: React.FormEvent<HTMLFormElement>) {
+    event.preventDefault();
+    if (!busy) onSubmit(form);
+  }
+
+  return (
+    <>
+      <div className="taskModalBackdrop" onClick={onClose} />
+      <section className="taskCreateModal" role="dialog" aria-modal="true" aria-labelledby="task-create-title">
+        <div className="taskCreateHead">
+          <div>
+            <p className="eyebrow">{source === "calendar" ? "Calendario" : "Tareas"}</p>
+            <h2 id="task-create-title">Nueva tarea</h2>
+          </div>
+          <button className="iconButton modalCloseButton" aria-label="Cerrar formulario" title="Cerrar" onClick={onClose} type="button"><X size={20} /></button>
+        </div>
+        <form className="taskForm taskCreateForm" onSubmit={submit}>
+          <label className="wide">Título<input value={form.title} onChange={(event) => onChange("title", event.target.value)} required /></label>
+          <label>Materia<select value={form.courseId} onChange={(event) => onChange("courseId", event.target.value)}>{courses.length ? courses.map((course) => <option key={course.id} value={course.id}>{course.name}</option>) : <option value="">Sin materias</option>}</select></label>
+          <label>Tipo<select value={form.typeId} onChange={(event) => onChange("typeId", event.target.value)}>{taskTypes.length ? taskTypes.map((type) => <option key={type.id} value={type.id}>{type.name}</option>) : <option value="">Tarea</option>}</select></label>
+          <label>Fecha<input type="date" value={form.dueDate} onChange={(event) => onChange("dueDate", event.target.value)} required /></label>
+          <label>Hora<input type="time" value={form.dueTime} onChange={(event) => onChange("dueTime", event.target.value)} /></label>
+          <label>Estado<select value={form.status} onChange={(event) => onChange("status", event.target.value as TaskStatus)}><option>Pendiente</option><option>Se entrega hoy</option><option>Entregado</option><option>Reprogramado</option><option>Cancelado</option></select></label>
+          <label>Prioridad<select value={form.priority} onChange={(event) => onChange("priority", event.target.value)}><option>Alta</option><option>Media</option><option>Baja</option></select></label>
+          <label className="wide">Material necesario<input value={form.materialNeeded} onChange={(event) => onChange("materialNeeded", event.target.value)} /></label>
+          <label className="wide">Link material<input value={form.materialUrl} onChange={(event) => onChange("materialUrl", event.target.value)} /></label>
+          <label className="wide">Link plataforma<input value={form.platformUrl} onChange={(event) => onChange("platformUrl", event.target.value)} /></label>
+          <label className="wide">Notas<textarea value={form.notes} onChange={(event) => onChange("notes", event.target.value)} /></label>
+          <label className="taskCheck"><input type="checkbox" checked={form.visible} onChange={(event) => onChange("visible", event.target.checked)} /> Visible para alumnos</label>
+          <button className="primaryAction" disabled={busy || !form.title.trim()} type="submit">{busy ? "Creando..." : "Crear tarea"}</button>
+        </form>
+      </section>
+    </>
   );
 }
 

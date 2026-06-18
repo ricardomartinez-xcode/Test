@@ -9,10 +9,8 @@ type CardSize = "compact" | "medium" | "large";
 
 type CourseConfig = { id: string; name: string; shortName: string; color: string; icon: string; cardSize: CardSize; active: boolean };
 type SectionConfig = { id: string; name: string; path: string; color: string; icon: string; cardSize: CardSize; previewStyle: string; active: boolean };
-type TaskTypeRow = { id: string; name: string; color: string | null; icon: string | null };
 type AdminTaskRow = { id: string; title: string; due_date: string; due_time: string | null; status: string; priority: string; visible_to_students: boolean; material_url: string | null; platform_url: string | null; courses: { name: string; color: string | null } | { name: string; color: string | null }[] | null; task_types: { name: string; color: string | null } | { name: string; color: string | null }[] | null };
 type AppProfileRow = { id: string; email: string; full_name: string | null; control_number: string | null; role: "student" | "admin" | "owner"; active: boolean; can_edit_tasks: boolean; can_delete_tasks: boolean };
-type TaskForm = { title: string; courseId: string; typeId: string; dueDate: string; dueTime: string; status: string; priority: string; visible: boolean; materialUrl: string; platformUrl: string; notes: string; materialNeeded: string };
 type UploadDestination = { id: string; sectionId: string | null; name: string; path: string; source: "supabase" | "r2" };
 
 type AdminHubProps = { courses: CourseConfig[]; sections: SectionConfig[]; columns?: unknown[]; supabase: SupabaseBrowser | null; reload: () => Promise<void>; onCourses: (courses: CourseConfig[]) => void; onSections: (sections: SectionConfig[]) => void; onError: (error: string | null) => void };
@@ -26,13 +24,10 @@ const tabs: Array<{ id: AdminTab; label: string; icon: string }> = [
   { id: "users", label: "Usuarios", icon: "☷" },
 ];
 
-const emptyTaskForm: TaskForm = { title: "", courseId: "", typeId: "", dueDate: new Date().toISOString().slice(0, 10), dueTime: "23:59", status: "Pendiente", priority: "Media", visible: true, materialUrl: "", platformUrl: "", notes: "", materialNeeded: "" };
-
 export function AdminHub({ courses, sections, supabase, reload, onCourses, onSections, onError }: AdminHubProps) {
   const [activeTab, setActiveTab] = useState<AdminTab>("general");
   const [profiles, setProfiles] = useState<AppProfileRow[]>([]);
   const [loadingUsers, setLoadingUsers] = useState(false);
-  const [taskTypes, setTaskTypes] = useState<TaskTypeRow[]>([]);
   const [adminTasks, setAdminTasks] = useState<AdminTaskRow[]>([]);
   const [loadingTasks, setLoadingTasks] = useState(false);
 
@@ -53,16 +48,8 @@ export function AdminHub({ courses, sections, supabase, reload, onCourses, onSec
   async function loadTaskAdminData() {
     if (!supabase) return;
     setLoadingTasks(true);
-    const [typesResult, tasksResult] = await Promise.all([
-      supabase.from("task_types").select("id,name,color,icon").eq("active", true).order("sort_order"),
-      supabase.from("tasks").select("id,title,due_date,due_time,status,priority,visible_to_students,material_url,platform_url,courses(name,color),task_types(name,color)").is("archived_at", null).order("due_date", { ascending: true }).order("due_time", { ascending: true }).limit(80),
-    ]);
-    const failure = typesResult.error || tasksResult.error;
-    if (failure) onError(failure.message);
-    else {
-      setTaskTypes((typesResult.data ?? []) as TaskTypeRow[]);
-      setAdminTasks((tasksResult.data ?? []) as AdminTaskRow[]);
-    }
+    const { data, error } = await supabase.from("tasks").select("id,title,due_date,due_time,status,priority,visible_to_students,material_url,platform_url,courses(name,color),task_types(name,color)").is("archived_at", null).order("due_date", { ascending: true }).order("due_time", { ascending: true }).limit(80);
+    if (error) onError(error.message); else setAdminTasks((data ?? []) as AdminTaskRow[]);
     setLoadingTasks(false);
   }
 
@@ -87,26 +74,6 @@ export function AdminHub({ courses, sections, supabase, reload, onCourses, onSec
     if (error) onError(error.message);
   }
 
-  async function createTask(form: TaskForm) {
-    if (!supabase) return;
-    const { error } = await supabase.from("tasks").insert({
-      title: form.title.trim(),
-      course_id: form.courseId || null,
-      task_type_id: form.typeId || null,
-      due_date: form.dueDate,
-      due_time: form.dueTime || "23:59",
-      status: form.status,
-      priority: form.priority,
-      visible_to_students: form.visible,
-      material_url: form.materialUrl.trim() || null,
-      platform_url: form.platformUrl.trim() || null,
-      notes: form.notes.trim() || null,
-      material_needed: form.materialNeeded.trim() || null,
-    });
-    if (error) onError(error.message);
-    else { await loadTaskAdminData(); await reload(); }
-  }
-
   async function updateTask(id: string, patch: Partial<Pick<AdminTaskRow, "status" | "visible_to_students" | "priority">>) {
     setAdminTasks((current) => current.map((task) => task.id === id ? { ...task, ...patch } : task));
     if (!supabase) return;
@@ -122,7 +89,7 @@ export function AdminHub({ courses, sections, supabase, reload, onCourses, onSec
       <section className="adminHero"><div><p className="eyebrow">Admin 2.0</p><h2>Centro de configuración</h2><p>Administra tareas, materiales, usuarios y estructura sin tocar código.</p></div><button type="button" onClick={() => void reload()}>Actualizar datos</button></section>
       <nav className="adminTabs" aria-label="Módulos de administración">{tabs.map((tab) => <button key={tab.id} type="button" className={activeTab === tab.id ? "active" : ""} onClick={() => setActiveTab(tab.id)}><span>{tab.icon}</span>{tab.label}</button>)}</nav>
       {activeTab === "general" ? <GeneralPanel stats={stats} /> : null}
-      {activeTab === "tasks" ? <TasksPanel courses={courses} taskTypes={taskTypes} tasks={adminTasks} loading={loadingTasks} onReload={() => void loadTaskAdminData()} onCreate={(form) => void createTask(form)} onUpdate={(id, patch) => void updateTask(id, patch)} /> : null}
+      {activeTab === "tasks" ? <TasksPanel tasks={adminTasks} loading={loadingTasks} onReload={() => void loadTaskAdminData()} onUpdate={(id, patch) => void updateTask(id, patch)} /> : null}
       {activeTab === "courses" ? <CoursesPanel courses={courses} onUpdate={(id, patch) => void updateCourse(id, patch)} /> : null}
       {activeTab === "sections" ? <SectionsPanel sections={sections} onUpdate={(id, patch) => void updateSection(id, patch)} /> : null}
       {activeTab === "materials" ? <MaterialUploadPanel sections={sections} supabase={supabase} reload={reload} onError={onError} /> : null}
@@ -137,19 +104,8 @@ function GeneralPanel({ stats }: { stats: { courses: number; sections: number; a
 
 function MetricCard({ label, value, help }: { label: string; value: string | number; help: string }) { return <article className="metricCard"><span>{label}</span><strong>{value}</strong><small>{help}</small></article>; }
 
-function TasksPanel({ courses, taskTypes, tasks, loading, onReload, onCreate, onUpdate }: { courses: CourseConfig[]; taskTypes: TaskTypeRow[]; tasks: AdminTaskRow[]; loading: boolean; onReload: () => void; onCreate: (form: TaskForm) => void; onUpdate: (id: string, patch: Partial<Pick<AdminTaskRow, "status" | "visible_to_students" | "priority">>) => void }) {
-  const [form, setForm] = useState<TaskForm>(emptyTaskForm);
-  useEffect(() => {
-    setForm((current) => ({ ...current, courseId: current.courseId || courses[0]?.id || "", typeId: current.typeId || taskTypes[0]?.id || "" }));
-  }, [courses, taskTypes]);
-  function setField<K extends keyof TaskForm>(key: K, value: TaskForm[K]) { setForm((current) => ({ ...current, [key]: value })); }
-  function submit(event: React.FormEvent<HTMLFormElement>) {
-    event.preventDefault();
-    if (!form.title.trim()) return;
-    onCreate(form);
-    setForm({ ...emptyTaskForm, courseId: courses[0]?.id || "", typeId: taskTypes[0]?.id || "" });
-  }
-  return <div className="taskAdminGrid"><section className="adminCard"><div className="adminCardHead"><div><h3>Nueva tarea</h3><p>Crea tareas que aparecerán en calendario y lista según visibilidad.</p></div></div><form className="taskForm" onSubmit={submit}><label className="wide">Título<input value={form.title} onChange={(event) => setField("title", event.target.value)} required /></label><label>Materia<select value={form.courseId} onChange={(event) => setField("courseId", event.target.value)}>{courses.map((course) => <option key={course.id} value={course.id}>{course.name}</option>)}</select></label><label>Tipo<select value={form.typeId} onChange={(event) => setField("typeId", event.target.value)}>{taskTypes.map((type) => <option key={type.id} value={type.id}>{type.name}</option>)}</select></label><label>Fecha<input type="date" value={form.dueDate} onChange={(event) => setField("dueDate", event.target.value)} required /></label><label>Hora<input type="time" value={form.dueTime} onChange={(event) => setField("dueTime", event.target.value)} /></label><label>Estado<select value={form.status} onChange={(event) => setField("status", event.target.value)}><option>Pendiente</option><option>Se entrega hoy</option><option>Entregado</option><option>Reprogramado</option><option>Cancelado</option></select></label><label>Prioridad<select value={form.priority} onChange={(event) => setField("priority", event.target.value)}><option>Alta</option><option>Media</option><option>Baja</option></select></label><label className="wide">Material necesario<input value={form.materialNeeded} onChange={(event) => setField("materialNeeded", event.target.value)} /></label><label className="wide">Link material<input value={form.materialUrl} onChange={(event) => setField("materialUrl", event.target.value)} /></label><label className="wide">Link plataforma<input value={form.platformUrl} onChange={(event) => setField("platformUrl", event.target.value)} /></label><label className="wide">Notas<textarea value={form.notes} onChange={(event) => setField("notes", event.target.value)} /></label><label className="taskCheck"><input type="checkbox" checked={form.visible} onChange={(event) => setField("visible", event.target.checked)} /> Visible para alumnos</label><button className="primaryAction" type="submit">Crear tarea</button></form></section><section className="adminCard"><div className="adminCardHead"><div><h3>Tareas próximas</h3><p>Actualiza estado y visibilidad sin abrir la base.</p></div><button type="button" onClick={onReload}>{loading ? "Cargando..." : "Recargar"}</button></div><div className="adminTaskList">{tasks.map((task) => <TaskAdminRow key={task.id} task={task} onUpdate={onUpdate} />)}{!tasks.length && !loading ? <p className="muted">No hay tareas cargadas.</p> : null}</div></section></div>;
+function TasksPanel({ tasks, loading, onReload, onUpdate }: { tasks: AdminTaskRow[]; loading: boolean; onReload: () => void; onUpdate: (id: string, patch: Partial<Pick<AdminTaskRow, "status" | "visible_to_students" | "priority">>) => void }) {
+  return <section className="adminCard"><div className="adminCardHead"><div><h3>Tareas próximas</h3><p>Actualiza estado y visibilidad sin abrir la base.</p></div><button type="button" onClick={onReload}>{loading ? "Cargando..." : "Recargar"}</button></div><div className="adminTaskList">{tasks.map((task) => <TaskAdminRow key={task.id} task={task} onUpdate={onUpdate} />)}{!tasks.length && !loading ? <p className="muted">No hay tareas cargadas.</p> : null}</div></section>;
 }
 
 function TaskAdminRow({ task, onUpdate }: { task: AdminTaskRow; onUpdate: (id: string, patch: Partial<Pick<AdminTaskRow, "status" | "visible_to_students" | "priority">>) => void }) {
