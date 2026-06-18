@@ -1,0 +1,506 @@
+:root {
+  --surface: #ffffff;
+  --surface-2: #f8fafc;
+  --surface-3: #eef2f7;
+  --ink: #111827;
+  --ink-soft: #344054;
+  --rule: #d8e0ea;
+  --action: #1f4f86;
+}
+
+body {
+  background: #eef2f6;
+}
+
+.mobileApp {
+  background: #f4f6f9;
+  box-shadow: none;
+}
+
+.topAppBar {
+  border-bottom-color: #d7dee8;
+}
+
+.screen,
+.calendarWorkspace,
+.taskListWorkspace,
+.taskDetailScreen,
+.groupScreen,
+.settingsScreen,
+.adminHub,
+.libraryShell {
+  background: #f4f6f9;
+}
+
+.calendarPane,
+.taskListWorkspace .listScreen,
+.detailSheet,
+.groupToolbar,
+.groupTableWrap,
+.settingsCard,
+.adminHero,
+.adminCard,
+.metricCard,
+.libraryHero,
+.sectionCard,
+.materialCardV2,
+.emptyLibrary {
+  border-color: var(--rule);
+  border-radius: 8px;
+  box-shadow: none;
+}
+
+.adminHero,
+.libraryHero,
+.settingsCard,
+.adminCard,
+.metricCard {
+  padding: 12px;
+}
+
+.adminHero,
+.libraryHero {
+  background: var(--surface);
+}
+
+.adminHero h2,
+.libraryHero h2,
+.settingsCard h2,
+.taskCreateHead h2 {
+  letter-spacing: 0;
+}
+
+.adminHero h2,
+.libraryHero h2 {
+  font-size: clamp(18px, 1.9vw, 22px);
+}
+
+.metricCard {
+  gap: 4px;
+}
+
+.metricCard strong {
+  font-size: 26px;
+}
+
+.adminTabs button,
+.libraryToolbar input,
+.libraryToolbar select,
+.libraryViewToggle,
+.adminHero button,
+.adminCardHead button,
+.taskForm input,
+.taskForm select,
+.taskForm textarea,
+.settingsGrid select,
+.settingsGrid input,
+.configRow input,
+.configRow select,
+.uploadForm input,
+.uploadForm select {
+  border-radius: 8px;
+}
+
+.adminTabs button {
+  padding: 8px 10px;
+}
+
+.libraryShell {
+  padding: 10px 10px 74px;
+}
+
+.libraryHero {
+  grid-template-columns: minmax(0, 1fr) minmax(74px, auto);
+  gap: 10px;
+}
+
+.libraryStats {
+  height: 54px;
+  min-width: 74px;
+  border-radius: 8px;
+  background: #0f2f4d;
+}
+
+.libraryStats strong {
+  font-size: 22px;
+}
+
+.libraryToolbar {
+  grid-template-columns: minmax(240px, 1.2fr) minmax(180px, 0.8fr) auto;
+}
+
+.libraryToolbar input,
+.libraryToolbar select,
+.libraryViewToggle {
+  height: 36px;
+}
+
+.sectionRail {
+  grid-template-columns: repeat(auto-fill, minmax(150px, 1fr));
+  gap: 8px;
+}
+
+.sectionCard {
+  min-height: 76px;
+  gap: 5px;
+  padding: 9px 10px;
+}
+
+.sectionIcon {
+  width: 28px;
+  height: 28px;
+  border-radius: 8px;
+  font-size: 10px;
+}
+
+.sectionCard strong {
+  font-size: 13px;
+}
+
+.materialGrid {
+  grid-template-columns: repeat(auto-fill, minmax(190px, 1fr));
+  gap: 9px;
+}
+
+.materialCardV2 {
+  min-height: 132px;
+  grid-template-columns: 44px minmax(0, 1fr);
+  gap: 8px;
+  padding: 9px;
+  border-left-width: 4px;
+}
+
+.materialCardV2.list {
+  min-height: 58px;
+  grid-template-columns: 38px minmax(0, 1fr) auto;
+}
+
+.materialThumb,
+.preview-small .materialThumb,
+.preview-large .materialThumb {
+  width: 44px;
+  height: 52px;
+  border-radius: 8px;
+}
+
+.materialCardV2.list .materialThumb {
+  width: 38px;
+  height: 44px;
+}
+
+.materialContent {
+  gap: 5px;
+}
+
+.materialContent strong {
+  font-size: 13px;
+  line-height: 1.2;
+  letter-spacing: 0;
+}
+
+.materialContent small {
+  font-size: 11px;
+}
+
+.materialMetaLine span {
+  border-radius: 8px;
+  font-size: 9px;
+  padding: 2px 6px;
+}
+
+.materialActions a,
+.materialActions span {
+  width: 31px;
+  min-width: 31px;
+  height: 31px;
+  min-height: 31px;
+}
+
+.calendarWorkspace,
+.taskListWorkspace,
+.taskDetailScreen,
+.groupScreen {
+  padding: clamp(6px, 1vw, 10px);
+}
+
+.calendarPane .dayCell,
+.dayCell {
+  min-height: clamp(70px, 11vh, 112px);
+  padding: 5px;
+}
+
+.calendarPane .dayNumber,
+.dayNumber {
+  min-width: 22px;
+  height: 22px;
+  font-size: 11px;
+}
+
+.calendarEvent {
+  min-height: 22px;
+  padding: 3px 5px;
+}
+
+.calendarEvent strong {
+  font-size: 10px;
+}
+
+.calendarEvent span {
+  font-size: 9px;
+}
+
+.groupTitle,
+.plainGroupTitle {
+  min-height: 34px;
+  padding: 6px 10px;
+  font-size: 15px;
+}
+
+.dataRow {
+  min-height: 50px;
+  padding: 7px 10px;
+}
+
+.taskRowButton {
+  gap: 2px;
+}
+
+.rowMain strong,
+.rowMain span {
+  font-size: 13px;
+}
+
+.rowDue {
+  font-size: 11px;
+}
+
+.rowSide {
+  gap: 6px;
+}
+
+.days {
+  font-size: 10px;
+  padding: 3px 6px;
+}
+
+.openIcon,
+.miniAction {
+  width: 28px;
+  height: 28px;
+}
+
+.taskDetailScreen {
+  gap: 8px;
+}
+
+.detailSheet {
+  max-width: 1180px;
+  padding: clamp(12px, 1.5vw, 18px);
+}
+
+.detailHero {
+  gap: 8px;
+  margin-bottom: 12px;
+}
+
+.detailHero h2 {
+  font-size: clamp(20px, 2.4vw, 30px);
+}
+
+.detailGrid {
+  gap: 8px;
+}
+
+.detailField {
+  padding: 9px 10px;
+}
+
+.detailField dt {
+  font-size: 11px;
+}
+
+.detailField dd {
+  font-size: 14px;
+}
+
+.groupToolbar {
+  position: sticky;
+  top: 52px;
+  z-index: 8;
+}
+
+.groupToolbar,
+.groupTableWrap {
+  background: var(--surface);
+}
+
+.groupTableWrap {
+  max-height: calc(100dvh - 128px);
+}
+
+.memberTable th,
+.memberTable td {
+  height: 32px;
+  padding: 0 8px;
+  font-size: 12px;
+}
+
+.memberTable th:nth-child(1),
+.memberTable td:nth-child(1) {
+  width: 82px;
+}
+
+.memberTable th:nth-child(2),
+.memberTable td:nth-child(2) {
+  width: min(240px, 34vw);
+}
+
+.memberTable th:nth-child(3),
+.memberTable td:nth-child(3) {
+  width: min(280px, 38vw);
+}
+
+.memberTable .booleanHeader,
+.memberTable .booleanCell {
+  width: 92px;
+}
+
+.groupColumnHeader {
+  grid-template-columns: minmax(0, 1fr) 26px 26px;
+}
+
+.groupColumnHeader button,
+.headerSpacer {
+  width: 26px;
+  min-height: 26px;
+  height: 26px;
+}
+
+.boolToggle {
+  min-width: 52px;
+  height: 26px;
+  font-size: 11px;
+}
+
+@media (min-width: 960px) {
+  .calendarWorkspace {
+    grid-template-columns: minmax(0, 1fr) minmax(270px, 310px);
+  }
+
+  .taskListWorkspace {
+    grid-template-columns: 1fr;
+  }
+
+  .taskListWorkspace .listScreen {
+    max-width: 1180px;
+    width: 100%;
+    margin: 0 auto;
+  }
+}
+
+@media (max-width: 720px) {
+  .libraryToolbar,
+  .libraryHero {
+    grid-template-columns: 1fr;
+  }
+
+  .libraryStats {
+    width: 100%;
+  }
+
+  .sectionRail {
+    grid-template-columns: repeat(auto-fill, minmax(132px, 1fr));
+  }
+
+  .materialGrid {
+    grid-template-columns: repeat(auto-fill, minmax(152px, 1fr));
+  }
+
+  .materialCardV2 {
+    min-height: 124px;
+  }
+
+  .groupToolbar {
+    top: 50px;
+  }
+}
+
+@media (max-width: 430px) {
+  .mobileApp,
+  .bottomNav {
+    width: 100vw;
+  }
+
+  .topAppBar {
+    height: 48px;
+    grid-template-columns: 34px 28px minmax(0, 1fr) 34px 34px;
+    padding-inline: 8px;
+  }
+
+  .barTitle {
+    font-size: 15px;
+  }
+
+  .bottomNav {
+    height: 56px;
+  }
+
+  .bottomNav button {
+    font-size: 10px;
+  }
+
+  .bottomNav button svg {
+    width: 18px;
+    height: 18px;
+  }
+
+  .calendarPane .dayCell,
+  .dayCell {
+    min-height: 68px;
+    padding: 4px 3px;
+  }
+
+  .calendarPane .dayNumber,
+  .dayNumber {
+    min-width: 20px;
+    height: 20px;
+    font-size: 10px;
+  }
+
+  .calendarEvent {
+    min-height: 20px;
+    padding: 2px 4px;
+  }
+
+  .rowMain strong,
+  .rowMain span,
+  .materialContent strong {
+    font-size: 12px;
+  }
+
+  .memberTable th,
+  .memberTable td {
+    height: 30px;
+    font-size: 11px;
+  }
+
+  .memberTable th:nth-child(2),
+  .memberTable td:nth-child(2) {
+    width: 190px;
+  }
+
+  .memberTable th:nth-child(3),
+  .memberTable td:nth-child(3) {
+    width: 210px;
+  }
+
+  .memberTable .booleanHeader,
+  .memberTable .booleanCell {
+    width: 78px;
+  }
+
+  .boolToggle {
+    min-width: 46px;
+    padding: 0 6px;
+  }
+}

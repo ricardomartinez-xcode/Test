@@ -67,8 +67,8 @@ DATABASE_URL="postgres://..."
 CLOUDFLARE_R2_ENDPOINT="https://<account-id>.r2.cloudflarestorage.com"
 CLOUDFLARE_R2_ACCESS_KEY_ID="..."
 CLOUDFLARE_R2_SECRET_ACCESS_KEY="..."
-CLOUDFLARE_R2_BUCKET="pscv-room"
-CLOUDFLARE_R2_PUBLIC_BASE_URL="https://cdn.tu-dominio.com"
+CLOUDFLARE_R2_BUCKET="psicologia"
+CLOUDFLARE_R2_PUBLIC_BASE_URL="https://pub-fb23330311304d9685253700280f0a85.r2.dev"
 ```
 
 ## Scripts
@@ -76,8 +76,17 @@ CLOUDFLARE_R2_PUBLIC_BASE_URL="https://cdn.tu-dominio.com"
 ```bash
 npm run dev
 npm run build
+npm run smoke
 npm run start
 npm run typecheck
+```
+
+## Operacion
+
+El runbook de deploy, variables Vercel, R2, Supabase y recuperacion esta en:
+
+```txt
+docs/OPERATIONS_RUNBOOK.md
 ```
 
 ## Carpetas importantes

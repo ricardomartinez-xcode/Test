@@ -4,7 +4,7 @@ import { useEffect, useMemo, useState } from "react";
 import { createSupabaseBrowserClient } from "@/lib/supabase/client";
 
 type SupabaseBrowser = NonNullable<ReturnType<typeof createSupabaseBrowserClient>>;
-type AdminTab = "general" | "tasks" | "courses" | "sections" | "materials" | "users";
+type AdminTab = "general" | "tasks" | "courses" | "sections" | "materials" | "users" | "diagnostics";
 type CardSize = "compact" | "medium" | "large";
 
 type CourseConfig = { id: string; name: string; shortName: string; color: string; icon: string; cardSize: CardSize; active: boolean };
@@ -12,6 +12,34 @@ type SectionConfig = { id: string; name: string; path: string; color: string; ic
 type AdminTaskRow = { id: string; title: string; due_date: string; due_time: string | null; status: string; priority: string; visible_to_students: boolean; material_url: string | null; platform_url: string | null; courses: { name: string; color: string | null } | { name: string; color: string | null }[] | null; task_types: { name: string; color: string | null } | { name: string; color: string | null }[] | null };
 type AppProfileRow = { id: string; email: string; full_name: string | null; control_number: string | null; role: "student" | "admin" | "owner"; active: boolean; can_edit_tasks: boolean; can_delete_tasks: boolean };
 type UploadDestination = { id: string; sectionId: string | null; name: string; path: string; source: "supabase" | "r2" };
+type HealthPayload = { ok?: boolean; mode?: string; auth?: { configured?: boolean }; integrations?: Record<string, boolean> };
+type DestinationsPayload = { ok?: boolean; root?: string; destinations?: UploadDestination[]; error?: string };
+type LibraryPayload = { ok?: boolean; summary?: { sections: number; materials: number; providers: Record<string, number> }; error?: string };
+type DiagnosticCounts = { profiles: number | null; tasks: number | null; materials: number | null; sections: number | null; groupColumns: number | null };
+type DiagnosticsSnapshot = {
+  checkedAt: string;
+  health: HealthPayload | null;
+  healthError: string | null;
+  destinations: DestinationsPayload | null;
+  destinationsError: string | null;
+  library: LibraryPayload | null;
+  libraryError: string | null;
+  counts: DiagnosticCounts;
+  countErrors: string[];
+};
+type ImportResult = {
+  dryRun?: boolean;
+  bucket?: string;
+  root?: string;
+  scannedObjects?: number;
+  sectionsToEnsure?: number;
+  sampleSections?: string[];
+  importedObjects?: number;
+  ensuredSections?: number;
+  inserted?: number;
+  updated?: number;
+  error?: string;
+};
 
 type AdminHubProps = { courses: CourseConfig[]; sections: SectionConfig[]; columns?: unknown[]; supabase: SupabaseBrowser | null; reload: () => Promise<void>; onCourses: (courses: CourseConfig[]) => void; onSections: (sections: SectionConfig[]) => void; onError: (error: string | null) => void };
 
@@ -22,6 +50,7 @@ const tabs: Array<{ id: AdminTab; label: string; icon: string }> = [
   { id: "sections", label: "Secciones", icon: "▤" },
   { id: "materials", label: "Materiales", icon: "⬡" },
   { id: "users", label: "Usuarios", icon: "☷" },
+  { id: "diagnostics", label: "Diagnóstico", icon: "◎" },
 ];
 
 export function AdminHub({ courses, sections, supabase, reload, onCourses, onSections, onError }: AdminHubProps) {
@@ -94,6 +123,7 @@ export function AdminHub({ courses, sections, supabase, reload, onCourses, onSec
       {activeTab === "sections" ? <SectionsPanel sections={sections} onUpdate={(id, patch) => void updateSection(id, patch)} /> : null}
       {activeTab === "materials" ? <MaterialUploadPanel sections={sections} supabase={supabase} reload={reload} onError={onError} /> : null}
       {activeTab === "users" ? <UsersPanel profiles={profiles} loading={loadingUsers} onReload={() => void loadProfiles()} onUpdate={(id, patch) => void updateProfile(id, patch)} /> : null}
+      {activeTab === "diagnostics" ? <DiagnosticsPanel supabase={supabase} reload={reload} onError={onError} /> : null}
     </div>
   );
 }
@@ -103,6 +133,137 @@ function GeneralPanel({ stats }: { stats: { courses: number; sections: number; a
 }
 
 function MetricCard({ label, value, help }: { label: string; value: string | number; help: string }) { return <article className="metricCard"><span>{label}</span><strong>{value}</strong><small>{help}</small></article>; }
+
+function DiagnosticsPanel({ supabase, reload, onError }: { supabase: SupabaseBrowser | null; reload: () => Promise<void>; onError: (error: string | null) => void }) {
+  const [snapshot, setSnapshot] = useState<DiagnosticsSnapshot | null>(null);
+  const [loading, setLoading] = useState(false);
+  const [importBusy, setImportBusy] = useState(false);
+  const [importResult, setImportResult] = useState<ImportResult | null>(null);
+
+  useEffect(() => {
+    void loadDiagnostics();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [supabase]);
+
+  async function loadDiagnostics() {
+    setLoading(true);
+    const [health, destinations, library, counts] = await Promise.all([
+      safeJson<HealthPayload>("/api/health"),
+      safeJson<DestinationsPayload>("/api/uploads/destinations"),
+      safeJson<LibraryPayload>("/api/materials/library?limit=25"),
+      loadDiagnosticCounts(supabase),
+    ]);
+
+    setSnapshot({
+      checkedAt: new Date().toISOString(),
+      health: health.data,
+      healthError: health.error,
+      destinations: destinations.data,
+      destinationsError: destinations.error,
+      library: library.data,
+      libraryError: library.error,
+      counts: counts.counts,
+      countErrors: counts.errors,
+    });
+    setLoading(false);
+  }
+
+  async function runImport(dryRun: boolean) {
+    setImportBusy(true);
+    try {
+      const response = await fetch("/api/admin/r2/import-materials", {
+        method: "POST",
+        credentials: "include",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ dryRun, reset: false, maxItems: 50000 }),
+      });
+      const body = await response.json().catch(() => ({})) as ImportResult;
+      setImportResult(body);
+      if (!response.ok || body.error) throw new Error(body.error ?? "No se pudo ejecutar el importador R2.");
+      if (!dryRun) await reload();
+      await loadDiagnostics();
+    } catch (error) {
+      onError(error instanceof Error ? error.message : "No se pudo ejecutar el importador R2.");
+    } finally {
+      setImportBusy(false);
+    }
+  }
+
+  const destinations = snapshot?.destinations?.destinations ?? [];
+  const r2Destinations = destinations.filter((destination) => destination.source === "r2").length;
+  const supabaseDestinations = destinations.filter((destination) => destination.source === "supabase").length;
+  const providers = snapshot?.library?.summary?.providers ?? {};
+  const healthOk = Boolean(snapshot?.health?.ok && snapshot.health.auth?.configured && snapshot.health.integrations?.supabase && snapshot.health.integrations?.r2);
+
+  return (
+    <section className="diagnosticsLayout">
+      <article className="adminCard diagnosticCard">
+        <div className="adminCardHead">
+          <div><h3>Estado operativo</h3><p>{snapshot ? `Revisado ${formatDateTime(snapshot.checkedAt)}` : "Sin revisión cargada"}</p></div>
+          <button type="button" onClick={() => void loadDiagnostics()}>{loading ? "Revisando..." : "Revisar"}</button>
+        </div>
+        <div className="diagnosticPills">
+          <DiagnosticPill label="App" ok={!snapshot?.healthError && Boolean(snapshot?.health?.ok)} />
+          <DiagnosticPill label="Auth" ok={!snapshot?.healthError && Boolean(snapshot?.health?.auth?.configured)} />
+          <DiagnosticPill label="Supabase" ok={!snapshot?.healthError && Boolean(snapshot?.health?.integrations?.supabase)} />
+          <DiagnosticPill label="R2" ok={!snapshot?.healthError && Boolean(snapshot?.health?.integrations?.r2)} />
+        </div>
+        <div className="diagnosticRows">
+          <DiagnosticRow label="Modo" value={snapshot?.health?.mode ?? "sin dato"} />
+          <DiagnosticRow label="Postgres directo" value={snapshot?.health?.integrations?.postgresDirect ? "activo" : "no requerido"} />
+          <DiagnosticRow label="Resultado" value={snapshot?.healthError ?? (healthOk ? "listo" : "requiere revisión")} />
+        </div>
+      </article>
+
+      <article className="adminCard diagnosticCard">
+        <div className="adminCardHead"><div><h3>R2 y biblioteca</h3><p>Destinos visibles para subida y materiales indexados.</p></div></div>
+        <div className="diagnosticRows">
+          <DiagnosticRow label="Raíz R2" value={snapshot?.destinations?.root ?? "psicologia"} />
+          <DiagnosticRow label="Destinos totales" value={destinations.length} />
+          <DiagnosticRow label="Desde R2" value={r2Destinations} />
+          <DiagnosticRow label="Desde Supabase" value={supabaseDestinations} />
+          <DiagnosticRow label="Materiales visibles" value={snapshot?.library?.summary?.materials ?? 0} />
+          <DiagnosticRow label="Secciones visibles" value={snapshot?.library?.summary?.sections ?? 0} />
+        </div>
+        {snapshot?.destinationsError ? <p className="diagnosticError">{snapshot.destinationsError}</p> : null}
+        {snapshot?.libraryError ? <p className="diagnosticError">{snapshot.libraryError}</p> : null}
+        <div className="diagnosticSample">{destinations.slice(0, 7).map((destination) => <span key={destination.id}>{destination.path}</span>)}</div>
+      </article>
+
+      <article className="adminCard diagnosticCard">
+        <div className="adminCardHead"><div><h3>Supabase</h3><p>Conteos rápidos para detectar tablas vacías o RLS mal aplicado.</p></div></div>
+        <div className="diagnosticRows">
+          <DiagnosticRow label="Perfiles" value={formatCount(snapshot?.counts.profiles)} />
+          <DiagnosticRow label="Tareas activas" value={formatCount(snapshot?.counts.tasks)} />
+          <DiagnosticRow label="Materiales" value={formatCount(snapshot?.counts.materials)} />
+          <DiagnosticRow label="Secciones activas" value={formatCount(snapshot?.counts.sections)} />
+          <DiagnosticRow label="Columnas grupo" value={formatCount(snapshot?.counts.groupColumns)} />
+        </div>
+        {snapshot?.countErrors.map((error) => <p className="diagnosticError" key={error}>{error}</p>)}
+      </article>
+
+      <article className="adminCard diagnosticCard importer">
+        <div className="adminCardHead"><div><h3>Importador R2</h3><p>Sincroniza carpetas y archivos del bucket con Supabase.</p></div></div>
+        <div className="diagnosticActions">
+          <button type="button" onClick={() => void runImport(true)} disabled={importBusy}>{importBusy ? "Ejecutando..." : "Simular"}</button>
+          <button className="primaryAction" type="button" onClick={() => void runImport(false)} disabled={importBusy}>Sincronizar R2</button>
+        </div>
+        {importResult ? (
+          <div className="importResult">
+            <strong>{importResult.dryRun ? "Simulación" : "Sincronización"}</strong>
+            <span>Raíz: {importResult.root ?? "psicologia"}</span>
+            <span>Objetos: {importResult.scannedObjects ?? importResult.importedObjects ?? 0}</span>
+            <span>Secciones: {importResult.sectionsToEnsure ?? importResult.ensuredSections ?? 0}</span>
+            {!importResult.dryRun ? <span>Insertados/actualizados: {importResult.inserted ?? 0}/{importResult.updated ?? 0}</span> : null}
+            {importResult.sampleSections?.length ? <small>{importResult.sampleSections.slice(0, 8).join(" · ")}</small> : null}
+            {importResult.error ? <p className="diagnosticError">{importResult.error}</p> : null}
+          </div>
+        ) : null}
+        <div className="diagnosticSample">{Object.entries(providers).map(([provider, count]) => <span key={provider}>{provider}: {count}</span>)}</div>
+      </article>
+    </section>
+  );
+}
 
 function TasksPanel({ tasks, loading, onReload, onUpdate }: { tasks: AdminTaskRow[]; loading: boolean; onReload: () => void; onUpdate: (id: string, patch: Partial<Pick<AdminTaskRow, "status" | "visible_to_students" | "priority">>) => void }) {
   return <section className="adminCard"><div className="adminCardHead"><div><h3>Tareas próximas</h3><p>Actualiza estado y visibilidad sin abrir la base.</p></div><button type="button" onClick={onReload}>{loading ? "Cargando..." : "Recargar"}</button></div><div className="adminTaskList">{tasks.map((task) => <TaskAdminRow key={task.id} task={task} onUpdate={onUpdate} />)}{!tasks.length && !loading ? <p className="muted">No hay tareas cargadas.</p> : null}</div></section>;
@@ -206,6 +367,59 @@ function MaterialUploadPanel({ sections, supabase, reload, onError }: { sections
 }
 
 function UsersPanel({ profiles, loading, onReload, onUpdate }: { profiles: AppProfileRow[]; loading: boolean; onReload: () => void; onUpdate: (id: string, patch: Partial<AppProfileRow>) => void }) { return <section className="adminCard"><div className="adminCardHead"><div><h3>Usuarios</h3><p>Consulta perfiles, roles y permisos operativos.</p></div><button type="button" onClick={onReload}>{loading ? "Cargando..." : "Recargar"}</button></div><div className="adminUserList">{profiles.map((profile) => <article className="adminUserRow" key={profile.id}><div><strong>{profile.full_name ?? profile.email}</strong><small>{profile.email} · {profile.control_number ?? "sin control"}</small></div><select value={profile.role} onChange={(event) => onUpdate(profile.id, { role: event.target.value as AppProfileRow["role"] })}><option value="student">Alumno</option><option value="admin">Admin</option><option value="owner">Owner</option></select><label><input type="checkbox" checked={profile.active} onChange={(event) => onUpdate(profile.id, { active: event.target.checked })} />Activo</label><label><input type="checkbox" checked={profile.can_edit_tasks} onChange={(event) => onUpdate(profile.id, { can_edit_tasks: event.target.checked })} />Edita</label></article>)}{!profiles.length && !loading ? <p className="muted">No se pudieron cargar usuarios o no hay permisos RLS para leerlos.</p> : null}</div></section>; }
+
+async function safeJson<T>(url: string) {
+  try {
+    const response = await fetch(url, { credentials: "include" });
+    const body = await response.json().catch(() => ({})) as T & { error?: string };
+    if (!response.ok || body.error) throw new Error(body.error ?? `No se pudo leer ${url}.`);
+    return { data: body as T, error: null };
+  } catch (error) {
+    return { data: null, error: error instanceof Error ? error.message : `No se pudo leer ${url}.` };
+  }
+}
+
+async function loadDiagnosticCounts(supabase: SupabaseBrowser | null): Promise<{ counts: DiagnosticCounts; errors: string[] }> {
+  const counts: DiagnosticCounts = { profiles: null, tasks: null, materials: null, sections: null, groupColumns: null };
+  if (!supabase) return { counts, errors: ["Supabase no está configurado en el navegador."] };
+
+  const queries = [
+    { key: "profiles", label: "Perfiles", query: supabase.from("app_profiles").select("id", { count: "exact", head: true }) },
+    { key: "tasks", label: "Tareas", query: supabase.from("tasks").select("id", { count: "exact", head: true }).is("archived_at", null) },
+    { key: "materials", label: "Materiales", query: supabase.from("materials").select("id", { count: "exact", head: true }) },
+    { key: "sections", label: "Secciones", query: supabase.from("material_sections").select("id", { count: "exact", head: true }).eq("active", true) },
+    { key: "groupColumns", label: "Columnas grupo", query: supabase.from("group_columns").select("id", { count: "exact", head: true }).eq("active", true) },
+  ] as const;
+
+  const results = await Promise.all(queries.map(async (item) => ({ ...item, result: await item.query })));
+  const errors: string[] = [];
+
+  for (const item of results) {
+    if (item.result.error) {
+      errors.push(`${item.label}: ${item.result.error.message}`);
+      continue;
+    }
+    counts[item.key] = item.result.count ?? 0;
+  }
+
+  return { counts, errors };
+}
+
+function DiagnosticPill({ label, ok }: { label: string; ok: boolean }) {
+  return <span className={ok ? "diagnosticPill ok" : "diagnosticPill"}>{label}</span>;
+}
+
+function DiagnosticRow({ label, value }: { label: string; value: string | number }) {
+  return <div><span>{label}</span><strong>{value}</strong></div>;
+}
+
+function formatCount(value: number | null | undefined) {
+  return value == null ? "sin permiso" : value;
+}
+
+function formatDateTime(value: string) {
+  return new Intl.DateTimeFormat("es-MX", { day: "2-digit", month: "2-digit", year: "numeric", hour: "2-digit", minute: "2-digit", hour12: false }).format(new Date(value));
+}
 
 function mergeDestinations(primary: UploadDestination[], secondary: UploadDestination[]) {
   const map = new Map<string, UploadDestination>();
