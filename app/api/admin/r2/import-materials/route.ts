@@ -2,6 +2,7 @@ import { NextResponse } from "next/server";
 import { createPublicR2Url, getR2BucketName, listR2Objects, type R2ListedObject } from "@/lib/server/r2";
 import { MATERIALS_R2_ROOT } from "@/lib/server/r2-paths";
 import { createSupabaseServerClient } from "@/lib/supabase/server";
+import { errorResponse, requirePermission, requireProfile } from "@/lib/server/authz";
 
 type SupabaseServerClient = Awaited<ReturnType<typeof createSupabaseServerClient>>;
 type DbError = { message: string } | null;
@@ -95,13 +96,6 @@ function chunk<T>(items: T[], size: number) {
   return out;
 }
 
-async function assertAdmin(supabase: SupabaseServerClient) {
-  const result = await supabase.rpc("is_admin");
-  const error = result.error as DbError;
-  if (error) throw new Error(error.message);
-  if (!result.data) throw new Error("No autorizado.");
-}
-
 async function loadSectionMap(supabase: SupabaseServerClient) {
   const result = await supabase.from("material_sections").select("id,path");
   const error = result.error as DbError;
@@ -177,26 +171,22 @@ async function resetMaterials(supabase: SupabaseServerClient, scope: "r2" | "all
 }
 
 async function runImport(request: Request, fallbackBody: ImportRequest) {
-  const supabase = await createSupabaseServerClient();
-
   try {
-    await assertAdmin(supabase);
-  } catch (error) {
-    return json({ error: error instanceof Error ? error.message : "No autorizado." }, 403);
-  }
+    const supabase = await createSupabaseServerClient();
+    await requireProfile(supabase);
+    await requirePermission(supabase, "r2:manage");
 
-  const body = request.method === "POST" ? ((await request.json().catch(() => ({}))) as ImportRequest) : fallbackBody;
-  const dryRun = body.dryRun ?? request.method !== "POST";
-  const reset = Boolean(body.reset);
-  const resetScope = body.resetScope ?? "r2";
-  const root = cleanPath(body.root ?? MATERIALS_R2_ROOT);
-  const maxItems = Math.max(1, Math.min(body.maxItems ?? 10000, 50000));
+    const body = request.method === "POST" ? ((await request.json().catch(() => ({}))) as ImportRequest) : fallbackBody;
+    const dryRun = body.dryRun ?? request.method !== "POST";
+    const reset = Boolean(body.reset);
+    const resetScope = body.resetScope ?? "r2";
+    const root = cleanPath(body.root ?? MATERIALS_R2_ROOT);
+    const maxItems = Math.max(1, Math.min(body.maxItems ?? 10000, 50000));
 
-  if (reset && body.confirm !== RESET_CONFIRMATION) {
-    return json({ error: `Envia confirm: "${RESET_CONFIRMATION}".`, destructiveScope: resetScope }, 400);
-  }
+    if (reset && body.confirm !== RESET_CONFIRMATION) {
+      return json({ error: `Envia confirm: "${RESET_CONFIRMATION}".`, destructiveScope: resetScope }, 400);
+    }
 
-  try {
     const objects = (await listR2Objects({ root, maxItems })).filter(isImportableObject).map(toImportable);
     const sectionPaths = Array.from(new Set(objects.map((object) => object.sectionPath))).sort((a, b) => a.localeCompare(b, "es"));
 
@@ -274,7 +264,7 @@ async function runImport(request: Request, fallbackBody: ImportRequest) {
       updated,
     });
   } catch (error) {
-    return json({ error: error instanceof Error ? error.message : "No se pudo importar desde R2." }, 500);
+    return errorResponse(error);
   }
 }
 

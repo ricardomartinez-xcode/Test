@@ -16,6 +16,18 @@ type AdminProfile = { role: "student" | "admin" | "owner"; canEditTasks: boolean
 type HealthPayload = { ok?: boolean; mode?: string; auth?: { configured?: boolean }; integrations?: Record<string, boolean> };
 type DestinationsPayload = { ok?: boolean; root?: string; destinations?: UploadDestination[]; error?: string };
 type LibraryPayload = { ok?: boolean; summary?: { sections: number; materials: number; providers: Record<string, number> }; error?: string };
+type R2StatusPayload = {
+  ok?: boolean;
+  configured?: boolean;
+  endpoint?: string;
+  bucket?: string;
+  root?: string;
+  publicBaseUrl?: string;
+  variables?: Record<string, boolean>;
+  folders?: string[];
+  sampleObjects?: Array<{ key: string; size: number; lastModified: string | null }>;
+  error?: string;
+};
 type DiagnosticCounts = { profiles: number | null; tasks: number | null; materials: number | null; sections: number | null; groupColumns: number | null };
 type DiagnosticsSnapshot = {
   checkedAt: string;
@@ -25,6 +37,8 @@ type DiagnosticsSnapshot = {
   destinationsError: string | null;
   library: LibraryPayload | null;
   libraryError: string | null;
+  r2Status: R2StatusPayload | null;
+  r2StatusError: string | null;
   counts: DiagnosticCounts;
   countErrors: string[];
 };
@@ -132,11 +146,11 @@ export function AdminHub({ courses, sections, profile = null, supabase, reload, 
       {activeTab === "tasks" ? <TasksPanel tasks={adminTasks} loading={loadingTasks} onReload={() => void loadTaskAdminData()} onUpdate={(id, patch) => void updateTask(id, patch)} /> : null}
       {activeTab === "courses" ? <CoursesPanel courses={courses} onUpdate={(id, patch) => void updateCourse(id, patch)} /> : null}
       {activeTab === "sections" ? <SectionsPanel sections={sections} onUpdate={(id, patch) => void updateSection(id, patch)} /> : null}
-      {activeTab === "materials" ? <MaterialUploadPanel sections={sections} supabase={supabase} reload={reload} onError={onError} /> : null}
+      {activeTab === "materials" ? <MaterialUploadPanel sections={sections} canManageR2={Boolean(profile?.canManageR2 || profile?.role === "owner")} supabase={supabase} reload={reload} onError={onError} /> : null}
       {activeTab === "users" ? <UsersPanel profiles={profiles} loading={loadingUsers} onReload={() => void loadProfiles()} onUpdate={(id, patch) => void updateProfile(id, patch)} /> : null}
       {activeTab === "notifications" ? <NotificationsPanel onError={onError} /> : null}
       {activeTab === "reports" ? <ReportsPanel onError={onError} /> : null}
-      {activeTab === "diagnostics" ? <DiagnosticsPanel supabase={supabase} reload={reload} onError={onError} /> : null}
+      {activeTab === "diagnostics" ? <DiagnosticsPanel canManageR2={Boolean(profile?.canManageR2 || profile?.role === "owner")} supabase={supabase} reload={reload} onError={onError} /> : null}
     </div>
   );
 }
@@ -294,7 +308,7 @@ function ReportTable({ title, rows }: { title: string; rows: ReportRow[] }) {
   );
 }
 
-function DiagnosticsPanel({ supabase, reload, onError }: { supabase: SupabaseBrowser | null; reload: () => Promise<void>; onError: (error: string | null) => void }) {
+function DiagnosticsPanel({ canManageR2, supabase, reload, onError }: { canManageR2: boolean; supabase: SupabaseBrowser | null; reload: () => Promise<void>; onError: (error: string | null) => void }) {
   const [snapshot, setSnapshot] = useState<DiagnosticsSnapshot | null>(null);
   const [loading, setLoading] = useState(false);
   const [importBusy, setImportBusy] = useState(false);
@@ -307,10 +321,11 @@ function DiagnosticsPanel({ supabase, reload, onError }: { supabase: SupabaseBro
 
   async function loadDiagnostics() {
     setLoading(true);
-    const [health, destinations, library, counts] = await Promise.all([
+    const [health, destinations, library, r2Status, counts] = await Promise.all([
       safeJson<HealthPayload>("/api/health"),
       safeJson<DestinationsPayload>("/api/uploads/destinations"),
       safeJson<LibraryPayload>("/api/materials/library?limit=25"),
+      canManageR2 ? safeJson<R2StatusPayload>("/api/admin/r2/status") : Promise.resolve({ data: null, error: null }),
       loadDiagnosticCounts(supabase),
     ]);
 
@@ -322,6 +337,8 @@ function DiagnosticsPanel({ supabase, reload, onError }: { supabase: SupabaseBro
       destinationsError: destinations.error,
       library: library.data,
       libraryError: library.error,
+      r2Status: r2Status.data,
+      r2StatusError: r2Status.error,
       counts: counts.counts,
       countErrors: counts.errors,
     });
@@ -353,6 +370,7 @@ function DiagnosticsPanel({ supabase, reload, onError }: { supabase: SupabaseBro
   const r2Destinations = destinations.filter((destination) => destination.source === "r2").length;
   const supabaseDestinations = destinations.filter((destination) => destination.source === "supabase").length;
   const providers = snapshot?.library?.summary?.providers ?? {};
+  const r2Status = snapshot?.r2Status;
   const healthOk = Boolean(snapshot?.health?.ok && snapshot.health.auth?.configured && snapshot.health.integrations?.supabase && snapshot.health.integrations?.r2);
 
   return (
@@ -378,13 +396,21 @@ function DiagnosticsPanel({ supabase, reload, onError }: { supabase: SupabaseBro
       <article className="adminCard diagnosticCard">
         <div className="adminCardHead"><div><h3>R2 y biblioteca</h3><p>Destinos visibles para subida y materiales indexados.</p></div></div>
         <div className="diagnosticRows">
-          <DiagnosticRow label="Raíz R2" value={snapshot?.destinations?.root ?? "psicologia"} />
+          <DiagnosticRow label="Bucket" value={r2Status?.bucket ?? "psicologia"} />
+          <DiagnosticRow label="Endpoint" value={r2Status?.endpoint ?? "sin dato"} />
+          <DiagnosticRow label="URL pública" value={r2Status?.publicBaseUrl ?? "sin dato"} />
+          <DiagnosticRow label="Raíz R2" value={snapshot?.destinations?.root ?? r2Status?.root ?? "bucket root"} />
           <DiagnosticRow label="Destinos totales" value={destinations.length} />
           <DiagnosticRow label="Desde R2" value={r2Destinations} />
           <DiagnosticRow label="Desde Supabase" value={supabaseDestinations} />
           <DiagnosticRow label="Materiales visibles" value={snapshot?.library?.summary?.materials ?? 0} />
           <DiagnosticRow label="Secciones visibles" value={snapshot?.library?.summary?.sections ?? 0} />
         </div>
+        {r2Status?.variables ? <div className="diagnosticSample">{Object.entries(r2Status.variables).map(([name, ok]) => <span key={name}>{name}: {ok ? "ok" : "falta"}</span>)}</div> : null}
+        {r2Status?.folders?.length ? <div className="diagnosticSample">{r2Status.folders.slice(0, 10).map((path) => <span key={path}>{path || "bucket root"}</span>)}</div> : null}
+        {r2Status?.sampleObjects?.length ? <div className="diagnosticSample">{r2Status.sampleObjects.map((object) => <span key={object.key}>{object.key}</span>)}</div> : null}
+        {snapshot?.r2StatusError ? <p className="diagnosticError">{snapshot.r2StatusError}</p> : null}
+        {r2Status?.error ? <p className="diagnosticError">{r2Status.error}</p> : null}
         {snapshot?.destinationsError ? <p className="diagnosticError">{snapshot.destinationsError}</p> : null}
         {snapshot?.libraryError ? <p className="diagnosticError">{snapshot.libraryError}</p> : null}
         <div className="diagnosticSample">{destinations.slice(0, 7).map((destination) => <span key={destination.id}>{destination.path}</span>)}</div>
@@ -404,10 +430,12 @@ function DiagnosticsPanel({ supabase, reload, onError }: { supabase: SupabaseBro
 
       <article className="adminCard diagnosticCard importer">
         <div className="adminCardHead"><div><h3>Importador R2</h3><p>Sincroniza carpetas y archivos del bucket con Supabase.</p></div></div>
-        <div className="diagnosticActions">
-          <button type="button" onClick={() => void runImport(true)} disabled={importBusy}>{importBusy ? "Ejecutando..." : "Simular"}</button>
-          <button className="primaryAction" type="button" onClick={() => void runImport(false)} disabled={importBusy}>Sincronizar R2</button>
-        </div>
+        {canManageR2 ? (
+          <div className="diagnosticActions">
+            <button type="button" onClick={() => void runImport(true)} disabled={importBusy}>{importBusy ? "Ejecutando..." : "Simular"}</button>
+            <button className="primaryAction" type="button" onClick={() => void runImport(false)} disabled={importBusy}>Sincronizar R2</button>
+          </div>
+        ) : <p className="muted">Tu perfil no tiene permiso para ejecutar sincronización R2.</p>}
         {importResult ? (
           <div className="importResult">
             <strong>{importResult.dryRun ? "Simulación" : "Sincronización"}</strong>
@@ -439,7 +467,7 @@ function CoursesPanel({ courses, onUpdate }: { courses: CourseConfig[]; onUpdate
 
 function SectionsPanel({ sections, onUpdate }: { sections: SectionConfig[]; onUpdate: (id: string, patch: Partial<SectionConfig>) => void }) { return <section className="adminCard"><div className="adminCardHead"><div><h3>Secciones de materiales</h3><p>Personaliza carpetas y subsecciones del asset R2.</p></div></div><div className="adminRows">{sections.map((section) => <div className="adminEditRow section" key={section.id}><span className="swatch" style={{ background: section.color }} /><div className="adminNameBlock"><strong>{section.name}</strong><small>{section.path}</small></div><input aria-label="Color" type="color" value={section.color} onChange={(event) => onUpdate(section.id, { color: event.target.value })} /><input aria-label="Icono" value={section.icon} onChange={(event) => onUpdate(section.id, { icon: event.target.value })} /><select aria-label="Preview" value={section.previewStyle} onChange={(event) => onUpdate(section.id, { previewStyle: event.target.value })}><option value="none">Sin preview</option><option value="icon">Icono</option><option value="thumbnail">Miniatura</option><option value="embedded">Embebido</option></select></div>)}</div></section>; }
 
-function MaterialUploadPanel({ sections, supabase, reload, onError }: { sections: SectionConfig[]; supabase: SupabaseBrowser | null; reload: () => Promise<void>; onError: (error: string | null) => void }) {
+function MaterialUploadPanel({ sections, canManageR2, supabase, reload, onError }: { sections: SectionConfig[]; canManageR2: boolean; supabase: SupabaseBrowser | null; reload: () => Promise<void>; onError: (error: string | null) => void }) {
   const sectionDestinations = useMemo<UploadDestination[]>(
     () => sections.map((section) => ({ id: `section:${section.id}`, sectionId: section.id, name: section.name, path: section.path, source: "supabase" })),
     [sections],
@@ -481,6 +509,10 @@ function MaterialUploadPanel({ sections, supabase, reload, onError }: { sections
   async function submit(event: React.FormEvent<HTMLFormElement>) {
     event.preventDefault();
     const destination = destinations.find((item) => item.id === destinationId);
+    if (!canManageR2) {
+      onError("Tu perfil no tiene permiso para subir archivos a R2.");
+      return;
+    }
     if (!file || !destination || !supabase) {
       onError("Selecciona un archivo y un destino válido.");
       return;
@@ -490,6 +522,7 @@ function MaterialUploadPanel({ sections, supabase, reload, onError }: { sections
     try {
       const response = await fetch("/api/uploads/presign", {
         method: "POST",
+        credentials: "include",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ fileName: file.name, contentType: file.type || "application/octet-stream", sectionPath: destination.path }),
       });
@@ -522,6 +555,8 @@ function MaterialUploadPanel({ sections, supabase, reload, onError }: { sections
       setBusy(false);
     }
   }
+
+  if (!canManageR2) return <section className="adminCard"><div className="adminCardHead"><div><h3>Subir material</h3><p>Tu perfil puede administrar materiales, pero no tiene permiso para crear cargas R2.</p></div></div></section>;
 
   return <section className="adminCard"><div className="adminCardHead"><div><h3>Subir material</h3><p>Guarda el archivo en R2 y registra la metadata en Supabase.</p></div></div><form className="adminUpload" onSubmit={submit}><label>Destino<select value={destinationId} onChange={(event) => setDestinationId(event.target.value)}>{destinations.map((destination) => <option key={destination.id} value={destination.id}>{destination.path}{destination.source === "r2" ? " (R2)" : ""}</option>)}</select></label><label>Título<input value={title} onChange={(event) => setTitle(event.target.value)} placeholder="Opcional" /></label><label>Archivo<input type="file" onChange={(event) => setFile(event.target.files?.[0] ?? null)} /></label><button className="primaryAction" disabled={busy} type="submit">{busy ? "Subiendo..." : "Subir a R2"}</button></form></section>;
 }

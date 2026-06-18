@@ -6,20 +6,22 @@ Sin `DATABASE_URL`, la app usa datos semilla y `localStorage`. Sirve para probar
 
 ## Modo producción
 
-Con `DATABASE_URL`, las rutas API pueden leer/escribir en Postgres.
+La app usa Supabase para auth, datos y RLS. `DATABASE_URL` solo queda para rutas legacy o herramientas directas.
 
 Endpoints incluidos:
 
 ```txt
 GET  /api/health
 GET  /api/tasks
-POST /api/tasks
 POST /api/uploads/presign
+GET  /api/notifications
+GET  /api/reports/operations
+GET  /api/admin/r2/status
 ```
 
 ## R2
 
-El endpoint `/api/uploads/presign` devuelve una URL prefirmada para subir archivos directo al bucket.
+El endpoint `/api/uploads/presign` devuelve una URL prefirmada para subir archivos directo al bucket. Requiere sesion y permiso `r2:manage`.
 
 Flujo recomendado:
 
@@ -33,14 +35,21 @@ PUT directo a R2 con uploadUrl
 Guardar metadata en materials
 ```
 
-## Seguridad pendiente para producción
+## Seguridad en producción
 
-Antes de compartir admin en producción, agregar:
+Implementado en la fase operativa:
 
 - autenticación,
-- middleware de sesión,
-- protección de rutas `/admin`,
+- RLS en tablas publicas,
+- permisos por perfil admin,
+- protección de APIs admin,
 - auditoría en `audit_log`,
-- validación de tamaño/tipo de archivo,
-- rate limiting básico,
-- borrado lógico en vez de delete físico.
+- borrado lógico de tareas,
+- notificaciones persistentes,
+- reportes operativos.
+
+Pendiente para una fase posterior si aumenta el uso:
+
+- rate limiting por IP/usuario,
+- limites estrictos de tamano/tipo de archivo por curso,
+- backups automáticos documentados.

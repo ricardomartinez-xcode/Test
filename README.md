@@ -36,6 +36,8 @@ Sheets funcionó bien para prototipo, pero no debe ser la fuente principal cuand
 - CSS nativo minimalista
 - API routes listas para Postgres y R2
 - Modo demo con datos semilla si no hay base de datos
+- Supabase Auth/RLS para permisos reales
+- Notificaciones persistentes y reportes operativos
 
 ## Ejecutar localmente
 
@@ -89,6 +91,13 @@ El runbook de deploy, variables Vercel, R2, Supabase y recuperacion esta en:
 docs/OPERATIONS_RUNBOOK.md
 ```
 
+Guias de cierre:
+
+```txt
+docs/QA_CHECKLIST.md
+docs/USER_GUIDE.md
+```
+
 ## Carpetas importantes
 
 ```txt
@@ -99,11 +108,10 @@ db/schema.sql         Esquema SQL recomendado
 docs/                 Arquitectura y migración
 ```
 
-## Siguiente paso recomendado
+## Estado actual
 
-1. Crear base Postgres.
-2. Ejecutar `db/schema.sql`.
-3. Exportar hojas `Tareas`, `Materiales`, `Usuarios`, `Catalogos` desde Sheets.
-4. Importar a Postgres.
-5. Configurar R2 para archivos nuevos.
-6. Dejar Sheets solo como respaldo/reporting.
+- Datos operativos en Supabase.
+- Archivos en Cloudflare R2.
+- Permisos por perfil admin.
+- Auditoria y reportes disponibles en Admin.
+- Smoke automatizado para contratos principales.

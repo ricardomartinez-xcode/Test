@@ -2,6 +2,8 @@ import { NextResponse } from "next/server";
 import { z } from "zod";
 import { buildMaterialR2Key, MATERIALS_R2_ROOT } from "@/lib/server/r2-paths";
 import { createUploadUrl, hasR2Config } from "@/lib/server/r2";
+import { createSupabaseServerClient } from "@/lib/supabase/server";
+import { errorResponse, requirePermission, requireProfile } from "@/lib/server/authz";
 
 const uploadSchema = z.object({
   fileName: z.string().min(1),
@@ -10,15 +12,23 @@ const uploadSchema = z.object({
 });
 
 export async function POST(request: Request) {
-  if (!hasR2Config()) {
-    return NextResponse.json(
-      { error: "R2 no está configurado. Agrega variables CLOUDFLARE_R2_* para habilitar uploads." },
-      { status: 501 },
-    );
-  }
+  try {
+    const supabase = await createSupabaseServerClient();
+    await requireProfile(supabase);
+    await requirePermission(supabase, "r2:manage");
 
-  const payload = uploadSchema.parse(await request.json());
-  const key = buildMaterialR2Key({ fileName: payload.fileName, sectionPath: payload.sectionPath });
-  const result = await createUploadUrl({ key, contentType: payload.contentType });
-  return NextResponse.json({ ...result, root: MATERIALS_R2_ROOT });
+    if (!hasR2Config()) {
+      return NextResponse.json(
+        { error: "R2 no está configurado. Agrega variables CLOUDFLARE_R2_* para habilitar uploads." },
+        { status: 501 },
+      );
+    }
+
+    const payload = uploadSchema.parse(await request.json());
+    const key = buildMaterialR2Key({ fileName: payload.fileName, sectionPath: payload.sectionPath });
+    const result = await createUploadUrl({ key, contentType: payload.contentType });
+    return NextResponse.json({ ...result, root: MATERIALS_R2_ROOT });
+  } catch (error) {
+    return errorResponse(error);
+  }
 }

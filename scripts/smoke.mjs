@@ -88,8 +88,19 @@ async function checkMaterialsLibraryContract() {
 }
 
 async function checkProtectedOperationsRoutes() {
-  for (const path of ["/api/notifications", "/api/reports/operations", "/api/admin/notifications"]) {
-    const response = await fetch(new URL(path, baseUrl));
+  for (const route of [
+    { path: "/api/notifications", method: "GET" },
+    { path: "/api/reports/operations", method: "GET" },
+    { path: "/api/admin/notifications", method: "GET" },
+    { path: "/api/admin/r2/status", method: "GET" },
+    { path: "/api/uploads/presign", method: "POST", body: { fileName: "smoke.txt", contentType: "text/plain" } },
+  ]) {
+    const response = await fetch(new URL(route.path, baseUrl), {
+      method: route.method,
+      headers: route.body ? { "content-type": "application/json" } : undefined,
+      body: route.body ? JSON.stringify(route.body) : undefined,
+    });
+    const path = `${route.method} ${route.path}`;
     assert.ok([401, 403].includes(response.status), `${path} should require an authenticated session, got ${response.status}`);
   }
 }

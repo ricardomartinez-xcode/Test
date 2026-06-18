@@ -1,6 +1,7 @@
 import { NextResponse } from "next/server";
 import { z } from "zod";
 import { createSupabaseServerClient } from "@/lib/supabase/server";
+import { errorResponse, requirePermission, requireProfile } from "@/lib/server/authz";
 
 const taskPatchSchema = z.object({
   title: z.string().min(1).optional(),
@@ -29,74 +30,92 @@ function taskSelect() {
 }
 
 export async function GET(_request: Request, context: RouteContext) {
-  const { id } = await context.params;
-  const supabase = await createSupabaseServerClient();
+  try {
+    const { id } = await context.params;
+    const supabase = await createSupabaseServerClient();
+    await requireProfile(supabase);
+    await requirePermission(supabase, "tasks:edit");
 
-  const { data, error } = await supabase
-    .from("tasks")
-    .select(taskSelect())
-    .eq("id", id)
-    .maybeSingle();
+    const { data, error } = await supabase
+      .from("tasks")
+      .select(taskSelect())
+      .eq("id", id)
+      .maybeSingle();
 
-  if (error) return NextResponse.json({ error: error.message }, { status: 500 });
-  if (!data) return NextResponse.json({ error: "Tarea no encontrada." }, { status: 404 });
+    if (error) return NextResponse.json({ error: error.message }, { status: 500 });
+    if (!data) return NextResponse.json({ error: "Tarea no encontrada." }, { status: 404 });
 
-  return NextResponse.json({ ok: true, task: data });
+    return NextResponse.json({ ok: true, task: data });
+  } catch (error) {
+    return errorResponse(error);
+  }
 }
 
 export async function PATCH(request: Request, context: RouteContext) {
-  const { id } = await context.params;
-  const supabase = await createSupabaseServerClient();
-  const patch = taskPatchSchema.parse(await request.json());
+  try {
+    const { id } = await context.params;
+    const supabase = await createSupabaseServerClient();
+    await requireProfile(supabase);
+    await requirePermission(supabase, "tasks:edit");
+    const patch = taskPatchSchema.parse(await request.json());
 
-  const before = await supabase.from("tasks").select("*").eq("id", id).maybeSingle();
-  if (before.error) return NextResponse.json({ error: before.error.message }, { status: 500 });
-  if (!before.data) return NextResponse.json({ error: "Tarea no encontrada." }, { status: 404 });
+    const before = await supabase.from("tasks").select("*").eq("id", id).maybeSingle();
+    if (before.error) return NextResponse.json({ error: before.error.message }, { status: 500 });
+    if (!before.data) return NextResponse.json({ error: "Tarea no encontrada." }, { status: 404 });
 
-  const { data, error } = await supabase
-    .from("tasks")
-    .update({ ...patch, updated_at: new Date().toISOString() })
-    .eq("id", id)
-    .select(taskSelect())
-    .single();
+    const { data, error } = await supabase
+      .from("tasks")
+      .update({ ...patch, updated_at: new Date().toISOString() })
+      .eq("id", id)
+      .select(taskSelect())
+      .single();
 
-  if (error) return NextResponse.json({ error: error.message }, { status: 500 });
+    if (error) return NextResponse.json({ error: error.message }, { status: 500 });
 
-  await supabase.from("audit_log").insert({
-    action: "task.update",
-    entity: "tasks",
-    entity_id: id,
-    before_data: before.data,
-    after_data: data,
-  });
+    await supabase.from("audit_log").insert({
+      action: "task.update",
+      entity: "tasks",
+      entity_id: id,
+      before_data: before.data,
+      after_data: data,
+    });
 
-  return NextResponse.json({ ok: true, task: data });
+    return NextResponse.json({ ok: true, task: data });
+  } catch (error) {
+    return errorResponse(error);
+  }
 }
 
 export async function DELETE(_request: Request, context: RouteContext) {
-  const { id } = await context.params;
-  const supabase = await createSupabaseServerClient();
+  try {
+    const { id } = await context.params;
+    const supabase = await createSupabaseServerClient();
+    await requireProfile(supabase);
+    await requirePermission(supabase, "tasks:delete");
 
-  const before = await supabase.from("tasks").select("*").eq("id", id).maybeSingle();
-  if (before.error) return NextResponse.json({ error: before.error.message }, { status: 500 });
-  if (!before.data) return NextResponse.json({ error: "Tarea no encontrada." }, { status: 404 });
+    const before = await supabase.from("tasks").select("*").eq("id", id).maybeSingle();
+    if (before.error) return NextResponse.json({ error: before.error.message }, { status: 500 });
+    if (!before.data) return NextResponse.json({ error: "Tarea no encontrada." }, { status: 404 });
 
-  const { data, error } = await supabase
-    .from("tasks")
-    .update({ archived_at: new Date().toISOString(), updated_at: new Date().toISOString() })
-    .eq("id", id)
-    .select("id,archived_at")
-    .single();
+    const { data, error } = await supabase
+      .from("tasks")
+      .update({ archived_at: new Date().toISOString(), updated_at: new Date().toISOString() })
+      .eq("id", id)
+      .select("id,archived_at")
+      .single();
 
-  if (error) return NextResponse.json({ error: error.message }, { status: 500 });
+    if (error) return NextResponse.json({ error: error.message }, { status: 500 });
 
-  await supabase.from("audit_log").insert({
-    action: "task.archive",
-    entity: "tasks",
-    entity_id: id,
-    before_data: before.data,
-    after_data: data,
-  });
+    await supabase.from("audit_log").insert({
+      action: "task.archive",
+      entity: "tasks",
+      entity_id: id,
+      before_data: before.data,
+      after_data: data,
+    });
 
-  return NextResponse.json({ ok: true, task: data });
+    return NextResponse.json({ ok: true, task: data });
+  } catch (error) {
+    return errorResponse(error);
+  }
 }
