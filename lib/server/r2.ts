@@ -216,11 +216,11 @@ export async function resolveR2ObjectKey(input: { key: string; fileName?: string
     input.title ?? undefined,
   ]).map(comparable).filter(Boolean);
 
-  const prefixes = unique([
+  const prefixes = Array.from(new Set([
     parentPrefix(normalizedKey),
     parentPrefix(decodedKey),
-    `${MATERIALS_R2_ROOT}/`,
-  ]);
+    MATERIALS_R2_ROOT ? `${MATERIALS_R2_ROOT}/` : "",
+  ].map((value) => value.trim()).filter((value) => value || !MATERIALS_R2_ROOT)));
 
   for (const prefix of prefixes) {
     let continuationToken: string | undefined;

@@ -936,7 +936,7 @@ function TaskList({
                 <article className={`dataRow taskRow card-${density} ${selectedTask?.id === task.id ? "selected" : ""}`} style={{ borderLeft: `5px solid ${task.courseColor ?? "#4285dc"}` }} key={task.id}>
                   <button className="taskRowButton" onClick={() => onSelect(task.id)} type="button" aria-label={`Ver detalles de ${task.title}`}>
                     <span className="rowMain"><strong>{task.title}</strong><span>{task.course}</span></span>
-                    <span className="rowDue">{task.dueDate} · {task.dueTime}</span>
+                    <span className="rowDue">{formatTaskDateTime(task.dueDate, task.dueTime)}</span>
                   </button>
                   <div className="rowSide">
                     <span className="days">D{task.daysRemaining}</span>
