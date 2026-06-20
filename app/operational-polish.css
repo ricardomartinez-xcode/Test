@@ -362,18 +362,43 @@ body {
 
 .memberTable .booleanHeader,
 .memberTable .booleanCell {
-  width: 92px;
+  min-width: 132px;
+  width: 148px;
 }
 
 .groupColumnHeader {
-  grid-template-columns: minmax(0, 1fr) 26px 26px;
+  display: grid;
+  grid-template-columns: minmax(78px, 1fr) 28px 28px;
+  align-items: center;
+  gap: 4px;
+  min-height: 34px;
+}
+
+.groupColumnHeader span {
+  display: block;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: normal;
+  line-height: 1.12;
+}
+
+.groupColumnHeader input {
+  width: 100%;
+  min-width: 0;
+  height: 28px;
+  border: 1px solid #cbd5e1;
+  border-radius: 8px;
+  padding: 0 6px;
+  font-size: 12px;
 }
 
 .groupColumnHeader button,
 .headerSpacer {
-  width: 26px;
-  min-height: 26px;
-  height: 26px;
+  width: 28px;
+  min-height: 28px;
+  height: 28px;
+  flex: 0 0 28px;
 }
 
 .boolToggle {
