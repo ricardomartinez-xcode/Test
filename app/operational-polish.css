@@ -974,3 +974,54 @@ body {
     width: calc(100vw - 12px);
   }
 }
+
+/* Calendar viewport fit. Keeps the month centered and removes the unused
+   desktop side column while preserving compact mobile rows. */
+.workbenchOverview,
+.calendarWorkspace {
+  width: 100%;
+  max-width: min(100%, 1360px);
+  margin-left: auto;
+  margin-right: auto;
+}
+
+.calendarWorkspace {
+  grid-template-columns: minmax(0, 1fr);
+  align-items: stretch;
+  padding: clamp(8px, 1.2vw, 16px);
+}
+
+.calendarPane {
+  width: 100%;
+  justify-self: center;
+}
+
+.calendarPane .dayCell,
+.dayCell {
+  min-height: clamp(72px, calc((100dvh - 292px) / 6), 126px);
+}
+
+@media (min-width: 960px) {
+  .calendarWorkspace {
+    grid-template-columns: minmax(0, 1fr);
+  }
+
+  .calendarPane .dayCell,
+  .dayCell {
+    min-height: clamp(82px, calc((100dvh - 252px) / 6), 142px);
+  }
+}
+
+@media (min-width: 1280px) {
+  .workbenchOverview,
+  .calendarWorkspace {
+    max-width: min(100%, 1420px);
+  }
+}
+
+@media (max-width: 620px) {
+  .calendarPane .dayCell,
+  .dayCell {
+    min-height: clamp(64px, calc((100dvh - 236px) / 6), 88px);
+  }
+}
