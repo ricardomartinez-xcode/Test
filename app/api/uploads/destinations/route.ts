@@ -26,6 +26,10 @@ function destinationKey(path: string) {
   return normalizeMaterialR2Key(path).toLowerCase();
 }
 
+function isGeneratedUploadFolder(path: string) {
+  return path.split("/").some((segment) => /^(19|20)\d{2}$/.test(segment.trim()));
+}
+
 export async function GET() {
   const sectionsByPath = new Map<string, SectionRow>();
 
@@ -54,7 +58,7 @@ export async function GET() {
       const folders = await listR2FolderPrefixes({ root: MATERIALS_R2_ROOT });
       for (const folder of folders) {
         const path = normalizeMaterialR2Key(folder);
-        if (!path) continue;
+        if (!path || isGeneratedUploadFolder(path)) continue;
         const key = destinationKey(path);
         const section = sectionsByPath.get(key);
         destinations.set(key, {
