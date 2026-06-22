@@ -241,7 +241,7 @@ export function AdminHub({ courses, sections, profile = null, supabase, reload, 
       {activeTab === "tasks" ? <TasksPanel tasks={adminTasks} loading={loadingTasks} onReload={() => void loadTaskAdminData()} onUpdate={(id, patch) => void updateTask(id, patch)} /> : null}
       {activeTab === "courses" ? <CoursesPanel courses={courses} onCreate={(input) => createCourse(input)} onUpdate={(id, patch) => updateCourse(id, patch)} /> : null}
       {activeTab === "sections" ? <SectionsPanel sections={sections} onUpdate={(id, patch) => void updateSection(id, patch)} /> : null}
-      {activeTab === "materials" ? <MaterialUploadPanel sections={sections} canManageR2={Boolean(profile?.canManageR2 || profile?.role === "owner")} supabase={supabase} reload={reload} onError={onError} /> : null}
+      {activeTab === "materials" ? <MaterialUploadPanel canManageR2={Boolean(profile?.canManageR2 || profile?.role === "owner")} supabase={supabase} reload={reload} onError={onError} /> : null}
       {activeTab === "users" ? <UsersPanel profiles={profiles} loading={loadingUsers} canManagePermissions={profile?.role === "owner"} onCreate={(input) => createStudent(input)} onReload={() => void loadProfiles()} onUpdate={(id, patch) => updateProfile(id, patch)} /> : null}
       {activeTab === "notifications" ? <NotificationsPanel onError={onError} /> : null}
       {activeTab === "reports" ? <ReportsPanel onError={onError} /> : null}
@@ -637,41 +637,41 @@ function CourseAdminRow({ course, onUpdate }: { course: CourseConfig; onUpdate: 
 
 function SectionsPanel({ sections, onUpdate }: { sections: SectionConfig[]; onUpdate: (id: string, patch: Partial<SectionConfig>) => void }) { return <section className="adminCard"><div className="adminCardHead"><div><h3>Secciones de materiales</h3><p>Personaliza carpetas y subsecciones del asset R2.</p></div></div><div className="adminRows">{sections.map((section) => <div className="adminEditRow section" key={section.id}><span className="swatch" style={{ background: section.color }} /><div className="adminNameBlock"><strong>{section.name}</strong><small>{section.path}</small></div><input aria-label="Color" type="color" value={section.color} onChange={(event) => onUpdate(section.id, { color: event.target.value })} /><input aria-label="Icono" value={section.icon} onChange={(event) => onUpdate(section.id, { icon: event.target.value })} /><select aria-label="Preview" value={section.previewStyle} onChange={(event) => onUpdate(section.id, { previewStyle: event.target.value })}><option value="none">Sin preview</option><option value="icon">Icono</option><option value="thumbnail">Miniatura</option><option value="embedded">Embebido</option></select></div>)}</div></section>; }
 
-function MaterialUploadPanel({ sections, canManageR2, supabase, reload, onError }: { sections: SectionConfig[]; canManageR2: boolean; supabase: SupabaseBrowser | null; reload: () => Promise<void>; onError: (error: string | null) => void }) {
-  const sectionDestinations = useMemo<UploadDestination[]>(
-    () => sections.map((section) => ({ id: `section:${section.id}`, sectionId: section.id, name: section.name, path: section.path, source: "supabase" })),
-    [sections],
-  );
-  const [destinations, setDestinations] = useState<UploadDestination[]>(sectionDestinations);
-  const [destinationId, setDestinationId] = useState(sectionDestinations[0]?.id ?? "");
+function MaterialUploadPanel({ canManageR2, supabase, reload, onError }: { canManageR2: boolean; supabase: SupabaseBrowser | null; reload: () => Promise<void>; onError: (error: string | null) => void }) {
+  const [destinations, setDestinations] = useState<UploadDestination[]>([]);
+  const [destinationId, setDestinationId] = useState("");
   const [title, setTitle] = useState("");
   const [file, setFile] = useState<File | null>(null);
   const [busy, setBusy] = useState(false);
-
-  useEffect(() => {
-    setDestinations((current) => mergeDestinations(sectionDestinations, current));
-  }, [sectionDestinations]);
+  const [loadingDestinations, setLoadingDestinations] = useState(false);
 
   useEffect(() => {
     let cancelled = false;
     async function loadDestinations() {
+      if (!canManageR2) return;
+      setLoadingDestinations(true);
       try {
         const response = await fetch("/api/uploads/destinations", { credentials: "include" });
         const body = await response.json() as { destinations?: UploadDestination[]; error?: string };
         if (!response.ok) throw new Error(body.error ?? "No se pudieron cargar destinos R2.");
-        if (!cancelled) setDestinations(mergeDestinations(sectionDestinations, body.destinations ?? []));
+        if (!cancelled) setDestinations(bucketDestinations(body.destinations ?? []));
       } catch (error) {
-        if (!cancelled && sectionDestinations.length) setDestinations(sectionDestinations);
+        if (!cancelled) setDestinations([]);
         if (!cancelled && error instanceof Error) onError(error.message);
+      } finally {
+        if (!cancelled) setLoadingDestinations(false);
       }
     }
     void loadDestinations();
     return () => { cancelled = true; };
-  }, [sectionDestinations, onError]);
+  }, [canManageR2, onError]);
 
   useEffect(() => {
-    if (!destinationId && destinations[0]) setDestinationId(destinations[0].id);
-    if (destinationId && destinations.length && !destinations.some((destination) => destination.id === destinationId)) {
+    if (!destinations.length) {
+      if (destinationId) setDestinationId("");
+      return;
+    }
+    if (!destinationId || !destinations.some((destination) => destination.id === destinationId)) {
       setDestinationId(destinations[0].id);
     }
   }, [destinationId, destinations]);
@@ -683,8 +683,8 @@ function MaterialUploadPanel({ sections, canManageR2, supabase, reload, onError 
       onError("Tu perfil no tiene permiso para subir archivos a R2.");
       return;
     }
-    if (!file || !destination || !supabase) {
-      onError("Selecciona un archivo y un destino válido.");
+    if (!file || !destination || destination.source !== "r2" || !supabase) {
+      onError("Selecciona un archivo y una carpeta válida del bucket.");
       return;
     }
 
@@ -728,7 +728,24 @@ function MaterialUploadPanel({ sections, canManageR2, supabase, reload, onError 
 
   if (!canManageR2) return <section className="adminCard"><div className="adminCardHead"><div><h3>Subir material</h3><p>Tu perfil puede administrar materiales, pero no tiene permiso para crear cargas R2.</p></div></div></section>;
 
-  return <section className="adminCard"><div className="adminCardHead"><div><h3>Subir material</h3><p>Guarda el archivo en R2 y registra la metadata en Supabase.</p></div></div><form className="adminUpload" onSubmit={submit}><label>Destino<select value={destinationId} onChange={(event) => setDestinationId(event.target.value)}>{destinations.map((destination) => <option key={destination.id} value={destination.id}>{destination.path}{destination.source === "r2" ? " (R2)" : ""}</option>)}</select></label><label>Título<input value={title} onChange={(event) => setTitle(event.target.value)} placeholder="Opcional" /></label><label>Archivo<input type="file" onChange={(event) => setFile(event.target.files?.[0] ?? null)} /></label><button className="primaryAction" disabled={busy} type="submit">{busy ? "Subiendo..." : "Subir a R2"}</button></form></section>;
+  return (
+    <section className="adminCard">
+      <div className="adminCardHead"><div><h3>Subir material</h3><p>Guarda el archivo en R2 y registra la metadata en Supabase.</p></div></div>
+      <form className="adminUpload" onSubmit={submit}>
+        <label>
+          Destino
+          <select value={destinationId} onChange={(event) => setDestinationId(event.target.value)} disabled={loadingDestinations || !destinations.length}>
+            {destinations.length ? destinations.map((destination) => (
+              <option key={destination.id} value={destination.id}>{destination.path}</option>
+            )) : <option value="">{loadingDestinations ? "Cargando carpetas del bucket..." : "Sin carpetas del bucket"}</option>}
+          </select>
+        </label>
+        <label>Título<input value={title} onChange={(event) => setTitle(event.target.value)} placeholder="Opcional" /></label>
+        <label>Archivo<input type="file" onChange={(event) => setFile(event.target.files?.[0] ?? null)} /></label>
+        <button className="primaryAction" disabled={busy || loadingDestinations || !destinations.length} type="submit">{busy ? "Subiendo..." : "Subir a R2"}</button>
+      </form>
+    </section>
+  );
 }
 
 function UsersPanel({ profiles, loading, canManagePermissions, onCreate, onReload, onUpdate }: { profiles: AppProfileRow[]; loading: boolean; canManagePermissions: boolean; onCreate: (input: StudentDraft) => Promise<boolean>; onReload: () => void; onUpdate: (id: string, patch: Partial<AppProfileRow>) => Promise<boolean> }) {
@@ -915,10 +932,16 @@ function canSeeAdminTab(profile: AdminProfile, tab: AdminTab) {
   return false;
 }
 
-function mergeDestinations(primary: UploadDestination[], secondary: UploadDestination[]) {
+function bucketDestinations(destinations: UploadDestination[]) {
   const map = new Map<string, UploadDestination>();
-  for (const destination of [...secondary, ...primary]) {
-    map.set(destination.path.trim().replace(/\\/g, "/").replace(/\/+$/, "").toLowerCase(), destination);
+  for (const destination of destinations) {
+    if (destination.source !== "r2") continue;
+    const key = destination.path.trim().replace(/\\/g, "/").replace(/\/+$/, "").toLowerCase();
+    if (!key) continue;
+    map.set(key, {
+      ...destination,
+      path: destination.path.trim().replace(/\\/g, "/").replace(/\/+$/, ""),
+    });
   }
   return Array.from(map.values()).sort((a, b) => a.path.localeCompare(b.path, "es"));
 }

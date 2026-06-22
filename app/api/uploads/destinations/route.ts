@@ -1,5 +1,5 @@
 import { NextResponse } from "next/server";
-import { DEFAULT_R2_FOLDER_DESTINATIONS, MATERIALS_R2_ROOT } from "@/lib/server/r2-paths";
+import { MATERIALS_R2_ROOT, normalizeMaterialR2Key } from "@/lib/server/r2-paths";
 import { hasR2Config, listR2FolderPrefixes } from "@/lib/server/r2";
 import { createSupabaseServerClient } from "@/lib/supabase/server";
 
@@ -10,26 +10,24 @@ type SectionRow = {
   sort_order: number | null;
 };
 
+type UploadDestination = {
+  id: string;
+  sectionId: string | null;
+  name: string;
+  path: string;
+  source: "r2";
+};
+
 function labelFromPath(path: string) {
   return path.split("/").filter(Boolean).at(-1) ?? path;
 }
 
 function destinationKey(path: string) {
-  return path.trim().replace(/\\/g, "/").replace(/\/+$/, "").toLowerCase();
+  return normalizeMaterialR2Key(path).toLowerCase();
 }
 
 export async function GET() {
-  const destinations = new Map<string, { id: string; sectionId: string | null; name: string; path: string; source: "supabase" | "r2" }>();
-
-  for (const path of DEFAULT_R2_FOLDER_DESTINATIONS) {
-    destinations.set(destinationKey(path), {
-      id: `r2:${path}`,
-      sectionId: null,
-      name: labelFromPath(path),
-      path,
-      source: "r2",
-    });
-  }
+  const sectionsByPath = new Map<string, SectionRow>();
 
   try {
     const supabase = await createSupabaseServerClient();
@@ -42,28 +40,27 @@ export async function GET() {
     if (error) throw error;
 
     for (const section of (data ?? []) as SectionRow[]) {
-      destinations.set(destinationKey(section.path), {
-        id: `section:${section.id}`,
-        sectionId: section.id,
-        name: section.name,
-        path: section.path,
-        source: "supabase",
-      });
+      const key = destinationKey(section.path);
+      if (key) sectionsByPath.set(key, section);
     }
   } catch {
-    // Demo/local mode can run without Supabase env vars.
+    // Demo/local mode can run without Supabase env vars; bucket folders still drive destinations.
   }
+
+  const destinations = new Map<string, UploadDestination>();
 
   if (hasR2Config()) {
     try {
       const folders = await listR2FolderPrefixes({ root: MATERIALS_R2_ROOT });
-      for (const path of folders) {
+      for (const folder of folders) {
+        const path = normalizeMaterialR2Key(folder);
+        if (!path) continue;
         const key = destinationKey(path);
-        if (destinations.has(key)) continue;
+        const section = sectionsByPath.get(key);
         destinations.set(key, {
           id: `r2:${path}`,
-          sectionId: null,
-          name: labelFromPath(path),
+          sectionId: section?.id ?? null,
+          name: section?.name ?? labelFromPath(path),
           path,
           source: "r2",
         });
