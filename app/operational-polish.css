@@ -746,6 +746,83 @@ body {
   resize: vertical;
 }
 
+.adminInlineForm {
+  display: grid;
+  grid-template-columns: repeat(4, minmax(0, 1fr)) auto;
+  gap: 10px;
+  align-items: end;
+  margin-bottom: 12px;
+  border: 1px solid #e2e8f0;
+  border-radius: 8px;
+  background: #fbfdff;
+  padding: 10px;
+}
+
+.adminInlineForm label {
+  min-width: 0;
+  display: grid;
+  gap: 6px;
+  color: #475467;
+  font-size: 12px;
+  font-weight: 800;
+}
+
+.adminInlineForm .wide {
+  grid-column: span 2;
+}
+
+.adminInlineForm input,
+.adminInlineForm select,
+.adminUserFields input,
+.adminUserActions button,
+.adminEditRow.course button {
+  width: 100%;
+  min-height: 36px;
+  border: 1px solid #d0d7e2;
+  border-radius: 8px;
+  background: #fff;
+  padding: 0 10px;
+}
+
+.adminInlineForm .primaryAction {
+  min-height: 36px;
+  margin: 0;
+  white-space: nowrap;
+}
+
+.adminEditRow.course {
+  grid-template-columns: 20px minmax(190px, 1.2fr) minmax(110px, 0.7fr) 48px minmax(80px, 0.5fr) minmax(106px, 0.7fr) minmax(88px, 0.5fr) minmax(92px, 0.5fr);
+}
+
+.adminEditRow.inactive,
+.adminUserRow.inactive {
+  opacity: 0.72;
+  background: #f2f5f8;
+}
+
+.adminUserRow.permissions {
+  grid-template-columns: minmax(240px, 1.2fr) 112px minmax(96px, 0.55fr) minmax(320px, 1.4fr);
+}
+
+.adminUserFields {
+  display: grid;
+  grid-template-columns: minmax(180px, 1fr) minmax(190px, 1fr) minmax(90px, 0.55fr);
+  gap: 7px;
+}
+
+.adminUserActions {
+  display: grid;
+  grid-template-columns: 1fr;
+  gap: 6px;
+}
+
+.adminUserActions button,
+.adminEditRow.course button {
+  color: var(--action);
+  font-size: 12px;
+  font-weight: 800;
+}
+
 .adminResult {
   margin: 10px 0 0;
   color: #16803d;
@@ -827,7 +904,7 @@ body {
 }
 
 .adminUserRow.permissions {
-  grid-template-columns: minmax(220px, 1fr) 120px auto minmax(320px, 1.4fr);
+  grid-template-columns: minmax(240px, 1.2fr) 112px minmax(96px, 0.55fr) minmax(320px, 1.4fr);
 }
 
 .adminPermissionGrid {
@@ -849,7 +926,17 @@ body {
 @media (max-width: 900px) {
   .reportsGrid,
   .adminNoticeForm,
+  .adminInlineForm,
+  .adminEditRow.course,
   .adminUserRow.permissions {
+    grid-template-columns: 1fr;
+  }
+
+  .adminInlineForm .wide {
+    grid-column: auto;
+  }
+
+  .adminUserFields {
     grid-template-columns: 1fr;
   }
 

@@ -11,6 +11,8 @@ type CourseConfig = { id: string; name: string; shortName: string; color: string
 type SectionConfig = { id: string; name: string; path: string; color: string; icon: string; cardSize: CardSize; previewStyle: string; active: boolean };
 type AdminTaskRow = { id: string; title: string; due_date: string; due_time: string | null; status: string; priority: string; visible_to_students: boolean; material_url: string | null; platform_url: string | null; courses: { name: string; color: string | null } | { name: string; color: string | null }[] | null; task_types: { name: string; color: string | null } | { name: string; color: string | null }[] | null };
 type AppProfileRow = { id: string; email: string; full_name: string | null; control_number: string | null; role: "student" | "admin" | "owner"; active: boolean; can_edit_tasks: boolean; can_delete_tasks: boolean; can_manage_materials: boolean; can_manage_users: boolean; can_manage_settings: boolean; can_manage_group: boolean; can_manage_notifications: boolean; can_view_reports: boolean; can_manage_r2: boolean };
+type CourseDraft = Pick<CourseConfig, "name" | "shortName" | "color" | "icon" | "cardSize">;
+type StudentDraft = { controlNumber: string; email: string; fullName: string };
 type UploadDestination = { id: string; sectionId: string | null; name: string; path: string; source: "supabase" | "r2" };
 type AdminProfile = { role: "student" | "admin" | "owner"; canEditTasks: boolean; canDeleteTasks: boolean; canManageMaterials: boolean; canManageUsers: boolean; canManageSettings: boolean; canManageGroup: boolean; canManageNotifications: boolean; canViewReports: boolean; canManageR2: boolean } | null;
 type HealthPayload = { ok?: boolean; mode?: string; auth?: { configured?: boolean }; integrations?: Record<string, boolean> };
@@ -107,11 +109,52 @@ export function AdminHub({ courses, sections, profile = null, supabase, reload, 
     setLoadingTasks(false);
   }
 
+  async function createCourse(input: CourseDraft) {
+    const name = input.name.trim();
+    const shortName = input.shortName.trim() || name;
+    if (!name) return false;
+
+    if (!supabase) {
+      onCourses([...courses, { ...input, id: `local-course-${Date.now()}`, name, shortName, active: true }]);
+      return true;
+    }
+
+    const { data, error } = await supabase
+      .from("courses")
+      .insert({
+        name,
+        short_name: shortName,
+        color: input.color,
+        icon: input.icon.trim() || "book",
+        card_size: input.cardSize,
+        sort_order: courses.length * 10 + 10,
+        active: true,
+      })
+      .select("id,name,short_name,color,icon,card_size,active")
+      .single();
+
+    if (error) {
+      onError(error.message);
+      return false;
+    }
+
+    onCourses([...courses, toCourseConfig(data as Record<string, unknown>)].sort((a, b) => a.name.localeCompare(b.name, "es")));
+    await reload();
+    return true;
+  }
+
   async function updateCourse(id: string, patch: Partial<CourseConfig>) {
+    const previous = courses;
     onCourses(courses.map((course) => course.id === id ? { ...course, ...patch } : course));
-    if (!supabase) return;
+    if (!supabase) return true;
     const { error } = await supabase.from("courses").update(toDbPatch(patch)).eq("id", id);
-    if (error) onError(error.message);
+    if (error) {
+      onCourses(previous);
+      onError(error.message);
+      return false;
+    }
+    await reload();
+    return true;
   }
 
   async function updateSection(id: string, patch: Partial<SectionConfig>) {
@@ -121,11 +164,62 @@ export function AdminHub({ courses, sections, profile = null, supabase, reload, 
     if (error) onError(error.message);
   }
 
+  async function createStudent(input: StudentDraft) {
+    const email = input.email.trim().toLowerCase();
+    const fullName = input.fullName.trim();
+    const controlNumber = input.controlNumber.trim();
+    if (!email || !fullName) return false;
+
+    const nextProfile: Partial<AppProfileRow> = {
+      email,
+      full_name: fullName,
+      control_number: controlNumber || null,
+      role: "student",
+      active: true,
+      can_edit_tasks: false,
+      can_delete_tasks: false,
+      can_manage_materials: false,
+      can_manage_users: false,
+      can_manage_settings: false,
+      can_manage_group: false,
+      can_manage_notifications: false,
+      can_view_reports: false,
+      can_manage_r2: false,
+    };
+
+    if (!supabase) {
+      setProfiles((current) => [...current, { ...(nextProfile as AppProfileRow), id: `local-student-${Date.now()}` }]);
+      return true;
+    }
+
+    const { data, error } = await supabase
+      .from("app_profiles")
+      .insert(nextProfile)
+      .select("id,email,full_name,control_number,role,active,can_edit_tasks,can_delete_tasks,can_manage_materials,can_manage_users,can_manage_settings,can_manage_group,can_manage_notifications,can_view_reports,can_manage_r2")
+      .single();
+
+    if (error) {
+      onError(error.message);
+      return false;
+    }
+
+    setProfiles((current) => [...current, data as AppProfileRow].sort(sortProfiles));
+    await reload();
+    return true;
+  }
+
   async function updateProfile(id: string, patch: Partial<AppProfileRow>) {
+    const previous = profiles;
     setProfiles((current) => current.map((profile) => profile.id === id ? { ...profile, ...patch } : profile));
-    if (!supabase) return;
+    if (!supabase) return true;
     const { error } = await supabase.from("app_profiles").update({ ...patch, updated_at: new Date().toISOString() }).eq("id", id);
-    if (error) onError(error.message);
+    if (error) {
+      setProfiles(previous);
+      onError(error.message);
+      return false;
+    }
+    await reload();
+    return true;
   }
 
   async function updateTask(id: string, patch: Partial<Pick<AdminTaskRow, "status" | "visible_to_students" | "priority">>) {
@@ -144,10 +238,10 @@ export function AdminHub({ courses, sections, profile = null, supabase, reload, 
       <nav className="adminTabs" aria-label="Módulos de administración">{visibleTabs.map((tab) => <button key={tab.id} type="button" className={activeTab === tab.id ? "active" : ""} onClick={() => setActiveTab(tab.id)}><span>{tab.icon}</span>{tab.label}</button>)}</nav>
       {activeTab === "general" ? <GeneralPanel stats={stats} /> : null}
       {activeTab === "tasks" ? <TasksPanel tasks={adminTasks} loading={loadingTasks} onReload={() => void loadTaskAdminData()} onUpdate={(id, patch) => void updateTask(id, patch)} /> : null}
-      {activeTab === "courses" ? <CoursesPanel courses={courses} onUpdate={(id, patch) => void updateCourse(id, patch)} /> : null}
+      {activeTab === "courses" ? <CoursesPanel courses={courses} onCreate={(input) => createCourse(input)} onUpdate={(id, patch) => updateCourse(id, patch)} /> : null}
       {activeTab === "sections" ? <SectionsPanel sections={sections} onUpdate={(id, patch) => void updateSection(id, patch)} /> : null}
       {activeTab === "materials" ? <MaterialUploadPanel sections={sections} canManageR2={Boolean(profile?.canManageR2 || profile?.role === "owner")} supabase={supabase} reload={reload} onError={onError} /> : null}
-      {activeTab === "users" ? <UsersPanel profiles={profiles} loading={loadingUsers} onReload={() => void loadProfiles()} onUpdate={(id, patch) => void updateProfile(id, patch)} /> : null}
+      {activeTab === "users" ? <UsersPanel profiles={profiles} loading={loadingUsers} onCreate={(input) => createStudent(input)} onReload={() => void loadProfiles()} onUpdate={(id, patch) => updateProfile(id, patch)} /> : null}
       {activeTab === "notifications" ? <NotificationsPanel onError={onError} /> : null}
       {activeTab === "reports" ? <ReportsPanel onError={onError} /> : null}
       {activeTab === "diagnostics" ? <DiagnosticsPanel canManageR2={Boolean(profile?.canManageR2 || profile?.role === "owner")} supabase={supabase} reload={reload} onError={onError} /> : null}
@@ -465,7 +559,73 @@ function TaskAdminRow({ task, onUpdate }: { task: AdminTaskRow; onUpdate: (id: s
   return <article className="adminTaskRow" style={{ borderLeftColor: course?.color ?? type?.color ?? "#4285dc" }}><div><strong>{task.title}</strong><small>{course?.name ?? "Sin materia"} · {type?.name ?? "Tarea"} · {task.due_date} {task.due_time?.slice(0, 5) ?? ""}</small></div><select value={task.status} onChange={(event) => onUpdate(task.id, { status: event.target.value })}><option>Pendiente</option><option>Se entrega hoy</option><option>Entregado</option><option>Reprogramado</option><option>Cancelado</option></select><select value={task.priority} onChange={(event) => onUpdate(task.id, { priority: event.target.value })}><option>Alta</option><option>Media</option><option>Baja</option></select><label><input type="checkbox" checked={task.visible_to_students} onChange={(event) => onUpdate(task.id, { visible_to_students: event.target.checked })} />Visible</label></article>;
 }
 
-function CoursesPanel({ courses, onUpdate }: { courses: CourseConfig[]; onUpdate: (id: string, patch: Partial<CourseConfig>) => void }) { return <section className="adminCard"><div className="adminCardHead"><div><h3>Materias</h3><p>Define colores, iconos y visibilidad general.</p></div></div><div className="adminRows">{courses.map((course) => <div className="adminEditRow" key={course.id}><span className="swatch" style={{ background: course.color }} /><strong>{course.name}</strong><input aria-label="Color" type="color" value={course.color} onChange={(event) => onUpdate(course.id, { color: event.target.value })} /><input aria-label="Icono" value={course.icon} onChange={(event) => onUpdate(course.id, { icon: event.target.value })} /><label className="adminSwitch"><input type="checkbox" checked={course.active} onChange={(event) => onUpdate(course.id, { active: event.target.checked })} />Activa</label></div>)}</div></section>; }
+function CoursesPanel({ courses, onCreate, onUpdate }: { courses: CourseConfig[]; onCreate: (input: CourseDraft) => Promise<boolean>; onUpdate: (id: string, patch: Partial<CourseConfig>) => Promise<boolean> }) {
+  const [draft, setDraft] = useState<CourseDraft>(() => emptyCourseDraft());
+  const [busy, setBusy] = useState(false);
+
+  async function submit(event: React.FormEvent<HTMLFormElement>) {
+    event.preventDefault();
+    setBusy(true);
+    const created = await onCreate(draft);
+    if (created) setDraft(emptyCourseDraft());
+    setBusy(false);
+  }
+
+  return (
+    <section className="adminCard">
+      <div className="adminCardHead"><div><h3>Materias</h3><p>Agrega materias y controla cuáles aparecen para alumnos.</p></div></div>
+      <form className="adminInlineForm courseCreateForm" onSubmit={submit}>
+        <label className="wide">Nombre<input value={draft.name} onChange={(event) => setDraft((current) => ({ ...current, name: event.target.value }))} placeholder="Nombre de la materia" required /></label>
+        <label>Nombre corto<input value={draft.shortName} onChange={(event) => setDraft((current) => ({ ...current, shortName: event.target.value }))} placeholder="Corto" /></label>
+        <label>Color<input type="color" value={draft.color} onChange={(event) => setDraft((current) => ({ ...current, color: event.target.value }))} /></label>
+        <label>Icono<input value={draft.icon} onChange={(event) => setDraft((current) => ({ ...current, icon: event.target.value }))} placeholder="book" /></label>
+        <label>Tamaño<select value={draft.cardSize} onChange={(event) => setDraft((current) => ({ ...current, cardSize: event.target.value as CardSize }))}><option value="compact">Compacta</option><option value="medium">Media</option><option value="large">Grande</option></select></label>
+        <button className="primaryAction" type="submit" disabled={busy || !draft.name.trim()}>{busy ? "Agregando..." : "Agregar materia"}</button>
+      </form>
+      <div className="adminRows">
+        {courses.map((course) => <CourseAdminRow key={course.id} course={course} onUpdate={onUpdate} />)}
+        {!courses.length ? <p className="muted">No hay materias cargadas.</p> : null}
+      </div>
+    </section>
+  );
+}
+
+function CourseAdminRow({ course, onUpdate }: { course: CourseConfig; onUpdate: (id: string, patch: Partial<CourseConfig>) => Promise<boolean> }) {
+  const [draft, setDraft] = useState<CourseDraft>(() => courseToDraft(course));
+  const [saving, setSaving] = useState(false);
+
+  useEffect(() => {
+    setDraft(courseToDraft(course));
+  }, [course]);
+
+  const dirty = draft.name !== course.name || draft.shortName !== course.shortName || draft.color !== course.color || draft.icon !== course.icon || draft.cardSize !== course.cardSize;
+
+  async function save() {
+    setSaving(true);
+    const saved = await onUpdate(course.id, {
+      name: draft.name.trim(),
+      shortName: draft.shortName.trim() || draft.name.trim(),
+      color: draft.color,
+      icon: draft.icon.trim() || "book",
+      cardSize: draft.cardSize,
+    });
+    if (!saved) setDraft(courseToDraft(course));
+    setSaving(false);
+  }
+
+  return (
+    <div className={`adminEditRow course ${course.active ? "" : "inactive"}`}>
+      <span className="swatch" style={{ background: draft.color }} />
+      <input aria-label="Nombre de materia" value={draft.name} onChange={(event) => setDraft((current) => ({ ...current, name: event.target.value }))} />
+      <input aria-label="Nombre corto" value={draft.shortName} onChange={(event) => setDraft((current) => ({ ...current, shortName: event.target.value }))} />
+      <input aria-label="Color" type="color" value={draft.color} onChange={(event) => setDraft((current) => ({ ...current, color: event.target.value }))} />
+      <input aria-label="Icono" value={draft.icon} onChange={(event) => setDraft((current) => ({ ...current, icon: event.target.value }))} />
+      <select aria-label="Tamaño" value={draft.cardSize} onChange={(event) => setDraft((current) => ({ ...current, cardSize: event.target.value as CardSize }))}><option value="compact">Compacta</option><option value="medium">Media</option><option value="large">Grande</option></select>
+      <button type="button" onClick={() => void save()} disabled={saving || !dirty || !draft.name.trim()}>{saving ? "Guardando..." : "Guardar"}</button>
+      <button type="button" onClick={() => void onUpdate(course.id, { active: !course.active })}>{course.active ? "Desactivar" : "Activar"}</button>
+    </div>
+  );
+}
 
 function SectionsPanel({ sections, onUpdate }: { sections: SectionConfig[]; onUpdate: (id: string, patch: Partial<SectionConfig>) => void }) { return <section className="adminCard"><div className="adminCardHead"><div><h3>Secciones de materiales</h3><p>Personaliza carpetas y subsecciones del asset R2.</p></div></div><div className="adminRows">{sections.map((section) => <div className="adminEditRow section" key={section.id}><span className="swatch" style={{ background: section.color }} /><div className="adminNameBlock"><strong>{section.name}</strong><small>{section.path}</small></div><input aria-label="Color" type="color" value={section.color} onChange={(event) => onUpdate(section.id, { color: event.target.value })} /><input aria-label="Icono" value={section.icon} onChange={(event) => onUpdate(section.id, { icon: event.target.value })} /><select aria-label="Preview" value={section.previewStyle} onChange={(event) => onUpdate(section.id, { previewStyle: event.target.value })}><option value="none">Sin preview</option><option value="icon">Icono</option><option value="thumbnail">Miniatura</option><option value="embedded">Embebido</option></select></div>)}</div></section>; }
 
@@ -563,33 +723,115 @@ function MaterialUploadPanel({ sections, canManageR2, supabase, reload, onError 
   return <section className="adminCard"><div className="adminCardHead"><div><h3>Subir material</h3><p>Guarda el archivo en R2 y registra la metadata en Supabase.</p></div></div><form className="adminUpload" onSubmit={submit}><label>Destino<select value={destinationId} onChange={(event) => setDestinationId(event.target.value)}>{destinations.map((destination) => <option key={destination.id} value={destination.id}>{destination.path}{destination.source === "r2" ? " (R2)" : ""}</option>)}</select></label><label>Título<input value={title} onChange={(event) => setTitle(event.target.value)} placeholder="Opcional" /></label><label>Archivo<input type="file" onChange={(event) => setFile(event.target.files?.[0] ?? null)} /></label><button className="primaryAction" disabled={busy} type="submit">{busy ? "Subiendo..." : "Subir a R2"}</button></form></section>;
 }
 
-function UsersPanel({ profiles, loading, onReload, onUpdate }: { profiles: AppProfileRow[]; loading: boolean; onReload: () => void; onUpdate: (id: string, patch: Partial<AppProfileRow>) => void }) {
+function UsersPanel({ profiles, loading, onCreate, onReload, onUpdate }: { profiles: AppProfileRow[]; loading: boolean; onCreate: (input: StudentDraft) => Promise<boolean>; onReload: () => void; onUpdate: (id: string, patch: Partial<AppProfileRow>) => Promise<boolean> }) {
+  const [draft, setDraft] = useState<StudentDraft>(() => emptyStudentDraft());
+  const [busy, setBusy] = useState(false);
+
+  async function submit(event: React.FormEvent<HTMLFormElement>) {
+    event.preventDefault();
+    setBusy(true);
+    const created = await onCreate(draft);
+    if (created) setDraft(emptyStudentDraft());
+    setBusy(false);
+  }
+
   return (
     <section className="adminCard">
-      <div className="adminCardHead"><div><h3>Usuarios</h3><p>Consulta perfiles, roles y permisos operativos.</p></div><button type="button" onClick={onReload}>{loading ? "Cargando..." : "Recargar"}</button></div>
+      <div className="adminCardHead"><div><h3>Usuarios</h3><p>Agrega alumnos y mantén sus datos de acceso escolar.</p></div><button type="button" onClick={onReload}>{loading ? "Cargando..." : "Recargar"}</button></div>
+      <form className="adminInlineForm studentCreateForm" onSubmit={submit}>
+        <label>No. Control<input value={draft.controlNumber} onChange={(event) => setDraft((current) => ({ ...current, controlNumber: event.target.value }))} placeholder="28699" /></label>
+        <label>Correo<input type="email" value={draft.email} onChange={(event) => setDraft((current) => ({ ...current, email: event.target.value }))} placeholder="alumno@univdep.edu.mx" required /></label>
+        <label className="wide">Nombre completo<input value={draft.fullName} onChange={(event) => setDraft((current) => ({ ...current, fullName: event.target.value }))} placeholder="Nombre completo" required /></label>
+        <button className="primaryAction" type="submit" disabled={busy || !draft.email.trim() || !draft.fullName.trim()}>{busy ? "Agregando..." : "Agregar alumno"}</button>
+      </form>
       <div className="adminUserList">
         {profiles.map((profile) => (
-          <article className="adminUserRow permissions" key={profile.id}>
-            <div><strong>{profile.full_name ?? profile.email}</strong><small>{profile.email} · {profile.control_number ?? "sin control"}</small></div>
-            <select value={profile.role} onChange={(event) => onUpdate(profile.id, { role: event.target.value as AppProfileRow["role"] })}><option value="student">Alumno</option><option value="admin">Admin</option><option value="owner">Owner</option></select>
-            <label><input type="checkbox" checked={profile.active} onChange={(event) => onUpdate(profile.id, { active: event.target.checked })} />Activo</label>
-            <div className="adminPermissionGrid">
-              <label><input type="checkbox" checked={profile.can_edit_tasks} onChange={(event) => onUpdate(profile.id, { can_edit_tasks: event.target.checked })} />Tareas</label>
-              <label><input type="checkbox" checked={profile.can_delete_tasks} onChange={(event) => onUpdate(profile.id, { can_delete_tasks: event.target.checked })} />Eliminar</label>
-              <label><input type="checkbox" checked={profile.can_manage_materials} onChange={(event) => onUpdate(profile.id, { can_manage_materials: event.target.checked })} />Materiales</label>
-              <label><input type="checkbox" checked={profile.can_manage_users} onChange={(event) => onUpdate(profile.id, { can_manage_users: event.target.checked })} />Usuarios</label>
-              <label><input type="checkbox" checked={profile.can_manage_settings} onChange={(event) => onUpdate(profile.id, { can_manage_settings: event.target.checked })} />Ajustes</label>
-              <label><input type="checkbox" checked={profile.can_manage_group} onChange={(event) => onUpdate(profile.id, { can_manage_group: event.target.checked })} />Grupo</label>
-              <label><input type="checkbox" checked={profile.can_manage_notifications} onChange={(event) => onUpdate(profile.id, { can_manage_notifications: event.target.checked })} />Avisos</label>
-              <label><input type="checkbox" checked={profile.can_view_reports} onChange={(event) => onUpdate(profile.id, { can_view_reports: event.target.checked })} />Reportes</label>
-              <label><input type="checkbox" checked={profile.can_manage_r2} onChange={(event) => onUpdate(profile.id, { can_manage_r2: event.target.checked })} />R2</label>
-            </div>
-          </article>
+          <UserAdminRow key={profile.id} profile={profile} onUpdate={onUpdate} />
         ))}
         {!profiles.length && !loading ? <p className="muted">No se pudieron cargar usuarios o no hay permisos RLS para leerlos.</p> : null}
       </div>
     </section>
   );
+}
+
+function UserAdminRow({ profile, onUpdate }: { profile: AppProfileRow; onUpdate: (id: string, patch: Partial<AppProfileRow>) => Promise<boolean> }) {
+  const [draft, setDraft] = useState(() => profileToDraft(profile));
+  const [saving, setSaving] = useState(false);
+
+  useEffect(() => {
+    setDraft(profileToDraft(profile));
+  }, [profile]);
+
+  const dirty = draft.fullName !== (profile.full_name ?? "") || draft.email !== profile.email || draft.controlNumber !== (profile.control_number ?? "");
+
+  async function save() {
+    setSaving(true);
+    const saved = await onUpdate(profile.id, {
+      full_name: draft.fullName.trim() || profile.email,
+      email: draft.email.trim().toLowerCase(),
+      control_number: draft.controlNumber.trim() || null,
+    });
+    if (!saved) setDraft(profileToDraft(profile));
+    setSaving(false);
+  }
+
+  return (
+    <article className={`adminUserRow permissions ${profile.active ? "" : "inactive"}`}>
+      <div className="adminUserFields">
+        <input aria-label="Nombre completo" value={draft.fullName} onChange={(event) => setDraft((current) => ({ ...current, fullName: event.target.value }))} />
+        <input aria-label="Correo" type="email" value={draft.email} onChange={(event) => setDraft((current) => ({ ...current, email: event.target.value }))} />
+        <input aria-label="No. Control" value={draft.controlNumber} onChange={(event) => setDraft((current) => ({ ...current, controlNumber: event.target.value }))} placeholder="sin control" />
+      </div>
+      <select value={profile.role} onChange={(event) => void onUpdate(profile.id, { role: event.target.value as AppProfileRow["role"] })}><option value="student">Alumno</option><option value="admin">Admin</option><option value="owner">Owner</option></select>
+      <div className="adminUserActions">
+        <button type="button" onClick={() => void save()} disabled={saving || !dirty || !draft.email.trim() || !draft.fullName.trim()}>{saving ? "Guardando..." : "Guardar"}</button>
+        <button type="button" onClick={() => void onUpdate(profile.id, { active: !profile.active })}>{profile.active ? "Desactivar" : "Activar"}</button>
+      </div>
+      <div className="adminPermissionGrid">
+        <label><input type="checkbox" checked={profile.can_edit_tasks} onChange={(event) => void onUpdate(profile.id, { can_edit_tasks: event.target.checked })} />Tareas</label>
+        <label><input type="checkbox" checked={profile.can_delete_tasks} onChange={(event) => void onUpdate(profile.id, { can_delete_tasks: event.target.checked })} />Eliminar</label>
+        <label><input type="checkbox" checked={profile.can_manage_materials} onChange={(event) => void onUpdate(profile.id, { can_manage_materials: event.target.checked })} />Materiales</label>
+        <label><input type="checkbox" checked={profile.can_manage_users} onChange={(event) => void onUpdate(profile.id, { can_manage_users: event.target.checked })} />Usuarios</label>
+        <label><input type="checkbox" checked={profile.can_manage_settings} onChange={(event) => void onUpdate(profile.id, { can_manage_settings: event.target.checked })} />Ajustes</label>
+        <label><input type="checkbox" checked={profile.can_manage_group} onChange={(event) => void onUpdate(profile.id, { can_manage_group: event.target.checked })} />Grupo</label>
+        <label><input type="checkbox" checked={profile.can_manage_notifications} onChange={(event) => void onUpdate(profile.id, { can_manage_notifications: event.target.checked })} />Avisos</label>
+        <label><input type="checkbox" checked={profile.can_view_reports} onChange={(event) => void onUpdate(profile.id, { can_view_reports: event.target.checked })} />Reportes</label>
+        <label><input type="checkbox" checked={profile.can_manage_r2} onChange={(event) => void onUpdate(profile.id, { can_manage_r2: event.target.checked })} />R2</label>
+      </div>
+    </article>
+  );
+}
+
+function emptyCourseDraft(): CourseDraft {
+  return { name: "", shortName: "", color: "#2f77d0", icon: "book", cardSize: "medium" };
+}
+
+function courseToDraft(course: CourseConfig): CourseDraft {
+  return { name: course.name, shortName: course.shortName, color: course.color, icon: course.icon, cardSize: course.cardSize };
+}
+
+function emptyStudentDraft(): StudentDraft {
+  return { controlNumber: "", email: "", fullName: "" };
+}
+
+function profileToDraft(profile: AppProfileRow): StudentDraft {
+  return { controlNumber: profile.control_number ?? "", email: profile.email, fullName: profile.full_name ?? "" };
+}
+
+function sortProfiles(a: AppProfileRow, b: AppProfileRow) {
+  return (a.full_name ?? a.email).localeCompare(b.full_name ?? b.email, "es");
+}
+
+function toCourseConfig(row: Record<string, unknown>): CourseConfig {
+  return {
+    id: String(row.id),
+    name: String(row.name),
+    shortName: String(row.short_name ?? row.name),
+    color: String(row.color ?? "#2f77d0"),
+    icon: String(row.icon ?? "book"),
+    cardSize: row.card_size === "compact" || row.card_size === "large" ? row.card_size : "medium",
+    active: Boolean(row.active ?? true),
+  };
 }
 
 async function safeJson<T>(url: string) {
@@ -674,4 +916,4 @@ function mergeDestinations(primary: UploadDestination[], secondary: UploadDestin
 }
 
 function first<T>(value: T | T[] | null | undefined): T | null { return Array.isArray(value) ? value[0] ?? null : value ?? null; }
-function toDbPatch(patch: Partial<CourseConfig> | Partial<SectionConfig>) { const out: Record<string, unknown> = { updated_at: new Date().toISOString() }; if ("color" in patch) out.color = patch.color; if ("icon" in patch) out.icon = patch.icon; if ("cardSize" in patch) out.card_size = patch.cardSize; if ("previewStyle" in patch) out.preview_style = patch.previewStyle; if ("active" in patch) out.active = patch.active; return out; }
+function toDbPatch(patch: Partial<CourseConfig> | Partial<SectionConfig>) { const out: Record<string, unknown> = { updated_at: new Date().toISOString() }; if ("name" in patch) out.name = patch.name; if ("shortName" in patch) out.short_name = patch.shortName; if ("color" in patch) out.color = patch.color; if ("icon" in patch) out.icon = patch.icon; if ("cardSize" in patch) out.card_size = patch.cardSize; if ("previewStyle" in patch) out.preview_style = patch.previewStyle; if ("active" in patch) out.active = patch.active; return out; }
