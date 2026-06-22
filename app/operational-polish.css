@@ -596,6 +596,17 @@ body {
   gap: 2px;
 }
 
+.notificationTrayHeadContent {
+  min-width: 0;
+  flex: 1 1 auto;
+}
+
+.notificationTrayHeadActions {
+  display: flex !important;
+  flex: 0 0 auto;
+  gap: 6px;
+}
+
 .notificationTrayHead strong {
   color: var(--ink);
   font-size: 15px;
@@ -617,6 +628,13 @@ body {
   font-size: 12px;
   font-weight: 800;
   padding: 0 9px;
+}
+
+.notificationTrayHead .notificationTrayIconButton {
+  width: 32px;
+  padding: 0;
+  display: grid;
+  place-items: center;
 }
 
 .notificationTrayActions {

@@ -750,6 +750,79 @@ a svg {
   grid-column: 1 / -1;
 }
 
+.detailEditForm {
+  border: 1px solid #e2e8f0;
+  border-radius: 8px;
+  background: #fbfdff;
+  padding: 12px;
+}
+
+.bucketMaterialPicker {
+  display: grid;
+  grid-template-columns: minmax(0, 0.9fr) minmax(0, 1.1fr);
+  gap: 10px;
+  border: 1px solid #e2e8f0;
+  border-radius: 8px;
+  background: #fff;
+  padding: 10px;
+}
+
+.bucketMaterialPicker small,
+.taskLinkedMaterials > span {
+  grid-column: 1 / -1;
+  color: #667085;
+  font-size: 12px;
+  font-weight: 800;
+}
+
+.formError {
+  color: #b42318 !important;
+}
+
+.detailEditActions {
+  grid-column: 1 / -1;
+  display: flex;
+  justify-content: flex-end;
+  gap: 8px;
+}
+
+.detailEditActions button,
+.linkedMaterialList a,
+.linkedMaterialList span {
+  min-height: 34px;
+  border: 1px solid #d0d7e2;
+  border-radius: 8px;
+  background: #fff;
+  color: #1f4f86;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 7px;
+  padding: 0 10px;
+  font-size: 13px;
+  font-weight: 800;
+  text-decoration: none;
+}
+
+.taskLinkedMaterials {
+  display: grid;
+  gap: 7px;
+}
+
+.linkedMaterialList {
+  min-width: 0;
+  display: flex;
+  flex-wrap: wrap;
+  gap: 7px;
+}
+
+.linkedMaterialList a,
+.linkedMaterialList span {
+  max-width: 100%;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
 .adminEditRow {
   grid-template-columns: 22px minmax(170px, 1fr) 64px minmax(100px, 130px) auto;
 }
@@ -780,6 +853,10 @@ a svg {
 
   .taskCreateDock {
     right: 14px;
+  }
+
+  .bucketMaterialPicker {
+    grid-template-columns: 1fr;
   }
 }
 

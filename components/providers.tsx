@@ -1,6 +1,6 @@
 "use client";
 
-import { useCallback, useEffect, useRef, useState } from "react";
+import { createContext, useCallback, useContext, useEffect, useMemo, useRef, useState } from "react";
 import styles from "./notification-delivery.module.css";
 
 type AppNotification = {
@@ -22,6 +22,20 @@ type NotificationPayload = {
   preferences?: RemotePreferences;
   error?: string;
 };
+type NotificationDeliveryContextValue = {
+  ready: boolean;
+  preferences: RemotePreferences;
+  localPreferences: LocalPreferences;
+  permission: NotificationPermission | "unsupported";
+  message: string | null;
+  emailBusy: boolean;
+  setBrowserEnabled: (enabled: boolean) => void;
+  setSoundEnabled: (enabled: boolean) => void;
+  requestBrowserPermission: () => Promise<void>;
+  updateEmailPreference: (emailEnabled: boolean) => Promise<void>;
+};
+
+const NotificationDeliveryContext = createContext<NotificationDeliveryContextValue | null>(null);
 
 const DEFAULT_LOCAL_PREFERENCES: LocalPreferences = {
   browserEnabled: false,
@@ -54,9 +68,12 @@ function writeLocalPreferences(profileId: string, preferences: LocalPreferences)
   }
 }
 
+export function useNotificationDelivery() {
+  return useContext(NotificationDeliveryContext);
+}
+
 export function Providers({ children }: { children: React.ReactNode }) {
   const [ready, setReady] = useState(false);
-  const [open, setOpen] = useState(false);
   const [preferences, setPreferences] = useState<RemotePreferences>(null);
   const [localPreferences, setLocalPreferences] = useState<LocalPreferences>(DEFAULT_LOCAL_PREFERENCES);
   const [permission, setPermission] = useState<NotificationPermission | "unsupported">("default");
@@ -176,15 +193,15 @@ export function Providers({ children }: { children: React.ReactNode }) {
     };
   }, [poll]);
 
-  function updateLocalPreferences(patch: Partial<LocalPreferences>) {
+  const updateLocalPreferences = useCallback((patch: Partial<LocalPreferences>) => {
     if (!profileIdRef.current) return;
     const next = { ...localPreferencesRef.current, ...patch };
     localPreferencesRef.current = next;
     setLocalPreferences(next);
     writeLocalPreferences(profileIdRef.current, next);
-  }
+  }, []);
 
-  async function requestBrowserPermission() {
+  const requestBrowserPermission = useCallback(async () => {
     if (typeof window === "undefined" || !("Notification" in window)) {
       setMessage("Este navegador no admite notificaciones nativas.");
       return;
@@ -208,9 +225,9 @@ export function Providers({ children }: { children: React.ReactNode }) {
     } else {
       setMessage("El permiso no fue concedido. Puedes cambiarlo desde la configuración del navegador.");
     }
-  }
+  }, [updateLocalPreferences]);
 
-  async function updateEmailPreference(emailEnabled: boolean) {
+  const updateEmailPreference = useCallback(async (emailEnabled: boolean) => {
     setEmailBusy(true);
     setMessage(null);
     try {
@@ -229,57 +246,113 @@ export function Providers({ children }: { children: React.ReactNode }) {
     } finally {
       setEmailBusy(false);
     }
-  }
+  }, []);
+
+  const delivery = useMemo<NotificationDeliveryContextValue>(() => ({
+    ready,
+    preferences,
+    localPreferences,
+    permission,
+    message,
+    emailBusy,
+    setBrowserEnabled: (enabled) => updateLocalPreferences({ browserEnabled: enabled }),
+    setSoundEnabled: (enabled) => {
+      interactedRef.current = true;
+      updateLocalPreferences({ soundEnabled: enabled });
+    },
+    requestBrowserPermission,
+    updateEmailPreference,
+  }), [ready, preferences, localPreferences, permission, message, emailBusy, updateLocalPreferences, requestBrowserPermission, updateEmailPreference]);
 
   return (
-    <>
+    <NotificationDeliveryContext.Provider value={delivery}>
       {children}
-      {ready ? (
-        <div className={styles.widget}>
-          {open ? (
-            <aside className={styles.panel} aria-label="Preferencias de avisos">
-              <div className={styles.panelHeader}>
-                <div>
-                  <strong>Avisos</strong>
-                  <p>Elige cómo recibir novedades.</p>
-                </div>
-                <button type="button" onClick={() => setOpen(false)} aria-label="Cerrar preferencias">×</button>
-              </div>
+    </NotificationDeliveryContext.Provider>
+  );
+}
 
-              <div className={styles.setting}>
-                <div>
-                  <strong>Navegador</strong>
-                  <small>Notificación nativa cuando PSCV Room está abierto.</small>
-                </div>
-                {permission === "granted" ? (
-                  <label className={styles.toggle}><input type="checkbox" checked={localPreferences.browserEnabled} onChange={(event) => updateLocalPreferences({ browserEnabled: event.target.checked })} /><span /></label>
-                ) : (
-                  <button type="button" className={styles.enableButton} onClick={() => void requestBrowserPermission()} disabled={permission === "unsupported"}>{permission === "unsupported" ? "No disponible" : "Activar"}</button>
-                )}
-              </div>
+export function NotificationSettingsPanel() {
+  const delivery = useNotificationDelivery();
 
-              <div className={styles.setting}>
-                <div>
-                  <strong>Sonido</strong>
-                  <small>Un tono breve al llegar un aviso nuevo.</small>
-                </div>
-                <label className={styles.toggle}><input type="checkbox" checked={localPreferences.soundEnabled} onChange={(event) => { interactedRef.current = true; updateLocalPreferences({ soundEnabled: event.target.checked }); }} disabled={!localPreferences.browserEnabled} /><span /></label>
-              </div>
+  if (!delivery) {
+    return (
+      <div className={styles.settingsPanel}>
+        <p className={styles.message}>La configuración de avisos estará disponible cuando termine de cargar tu sesión.</p>
+      </div>
+    );
+  }
 
-              <div className={styles.setting}>
-                <div>
-                  <strong>Correo</strong>
-                  <small>Recibe por email los anuncios que publiques.</small>
-                </div>
-                <label className={styles.toggle}><input type="checkbox" checked={Boolean(preferences?.email_enabled)} onChange={(event) => void updateEmailPreference(event.target.checked)} disabled={emailBusy} /><span /></label>
-              </div>
+  const { preferences, localPreferences, permission, message, emailBusy } = delivery;
+  const controlsDisabled = !delivery.ready;
 
-              {message ? <p className={styles.message}>{message}</p> : null}
-            </aside>
-          ) : null}
-          <button type="button" className={styles.launcher} onClick={() => setOpen((current) => !current)} aria-expanded={open}>◔ <span>Avisos</span></button>
+  return (
+    <div className={styles.settingsPanel}>
+      <div className={styles.setting}>
+        <div>
+          <strong>Navegador</strong>
+          <small>Notificación nativa cuando PSCV Room está abierto.</small>
         </div>
-      ) : null}
-    </>
+        {permission === "granted" ? (
+          <label className={styles.toggle} title="Notificaciones del navegador">
+            <input
+              type="checkbox"
+              aria-label="Activar notificaciones del navegador"
+              checked={localPreferences.browserEnabled}
+              onChange={(event) => delivery.setBrowserEnabled(event.target.checked)}
+              disabled={controlsDisabled}
+            />
+            <span />
+          </label>
+        ) : (
+          <button
+            type="button"
+            className={styles.enableButton}
+            onClick={() => void delivery.requestBrowserPermission()}
+            disabled={controlsDisabled || permission === "unsupported"}
+            aria-label="Activar notificaciones del navegador"
+            title="Activar notificaciones del navegador"
+          >
+            {permission === "unsupported" ? "No disponible" : "Activar"}
+          </button>
+        )}
+      </div>
+
+      <div className={styles.setting}>
+        <div>
+          <strong>Sonido</strong>
+          <small>Un tono breve al llegar un aviso nuevo.</small>
+        </div>
+        <label className={styles.toggle} title="Sonido de avisos">
+          <input
+            type="checkbox"
+            aria-label="Activar sonido de avisos"
+            checked={localPreferences.soundEnabled}
+            onChange={(event) => delivery.setSoundEnabled(event.target.checked)}
+            disabled={controlsDisabled || !localPreferences.browserEnabled}
+          />
+          <span />
+        </label>
+      </div>
+
+      <div className={styles.setting}>
+        <div>
+          <strong>Correo</strong>
+          <small>Recibe por email los anuncios que publiques.</small>
+        </div>
+        <label className={styles.toggle} title="Avisos por correo">
+          <input
+            type="checkbox"
+            aria-label="Activar avisos por correo"
+            checked={Boolean(preferences?.email_enabled)}
+            onChange={(event) => void delivery.updateEmailPreference(event.target.checked)}
+            disabled={controlsDisabled || emailBusy}
+          />
+          <span />
+        </label>
+      </div>
+
+      {controlsDisabled ? <p className={styles.message}>La configuración se habilitará cuando termine de cargar tu sesión.</p> : null}
+      {message ? <p className={styles.message}>{message}</p> : null}
+    </div>
   );
 }

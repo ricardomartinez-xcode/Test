@@ -13,6 +13,7 @@ import {
   Edit3,
   ExternalLink,
   FileCheck2,
+  FileText,
   FolderOpen,
   ListTodo,
   LogOut,
@@ -28,6 +29,7 @@ import {
 } from "lucide-react";
 import { AdminHub } from "@/components/admin-hub";
 import { MaterialLibrary } from "@/components/material-library";
+import { NotificationSettingsPanel } from "@/components/providers";
 import type { DeliveryType, GroupMember, Role, Task, TaskStatus } from "@/lib/domain";
 import { deliveryTypes, statuses } from "@/lib/domain";
 import { createSupabaseBrowserClient, hasSupabaseBrowserConfig } from "@/lib/supabase/client";
@@ -73,9 +75,13 @@ type Profile = {
 };
 
 type UiTask = Task & {
+  courseId?: string;
+  taskTypeId?: string;
+  priority?: string;
   courseColor?: string;
   taskTypeColor?: string;
   courseCardSize?: CardSize;
+  linkedMaterials?: MaterialOption[];
 };
 
 type CourseConfig = {
@@ -119,6 +125,7 @@ type TaskForm = {
   platformUrl: string;
   notes: string;
   materialNeeded: string;
+  materialId: string;
 };
 
 type TaskFormChange = <K extends keyof TaskForm>(key: K, value: TaskForm[K]) => void;
@@ -159,6 +166,36 @@ type AppNotification = {
   scheduled_for: string;
   read_at: string | null;
   created_at: string;
+};
+
+type MaterialSectionOption = {
+  id: string;
+  name: string;
+  path: string;
+  color: string | null;
+};
+
+type MaterialOption = {
+  id: string;
+  title: string;
+  material_type: string | null;
+  provider: string | null;
+  source_url: string | null;
+  preview_url: string | null;
+  thumbnail_url: string | null;
+  public_url?: string | null;
+  r2_key: string | null;
+  file_name: string | null;
+  content_type: string | null;
+  size_bytes: number | null;
+  section_id?: string | null;
+  section?: MaterialSectionOption | null;
+};
+
+type MaterialLibraryPayload = {
+  ok?: boolean;
+  materials?: MaterialOption[];
+  error?: string;
 };
 
 const fallbackPrefs: UserPreferences = {
@@ -231,6 +268,7 @@ function newTaskForm(defaults: Partial<TaskForm> = {}): TaskForm {
     platformUrl: "",
     notes: "",
     materialNeeded: "",
+    materialId: "",
     ...defaults,
   };
 }
@@ -247,6 +285,7 @@ export function AppShellV5({ initialTasks, initialMembers }: Props) {
   const [error, setError] = useState<string | null>(null);
   const [notifications, setNotifications] = useState<AppNotification[]>([]);
   const [notificationOpen, setNotificationOpen] = useState(false);
+  const [notificationView, setNotificationView] = useState<"notifications" | "settings">("notifications");
   const [tasks, setTasks] = useState<UiTask[]>(initialTasks);
   const [courses, setCourses] = useState<CourseConfig[]>(hasSupabaseConfig ? [] : demoCourses);
   const [sections, setSections] = useState<SectionConfig[]>(hasSupabaseConfig ? [] : demoSections);
@@ -262,6 +301,7 @@ export function AppShellV5({ initialTasks, initialMembers }: Props) {
 
   const prefs = profile?.preferences ?? fallbackPrefs;
   const role: Role = profile?.role === "admin" || profile?.role === "owner" ? "admin" : "reader";
+  const canEditTasks = Boolean(profile?.role === "owner" || (profile?.role === "admin" && profile.canEditTasks));
 
   useEffect(() => {
     if (!supabase) {
@@ -322,7 +362,7 @@ export function AppShellV5({ initialTasks, initialMembers }: Props) {
       client.from("material_sections").select("*").order("sort_order"),
       client
         .from("tasks")
-        .select("*, courses(name,color,card_size), task_types(name,color,card_size)")
+        .select("*, courses(id,name,color,card_size), task_types(id,name,color,card_size), task_materials(materials(id,title,material_type,provider,source_url,preview_url,thumbnail_url,r2_key,file_name,content_type,size_bytes,section_id,material_sections(id,name,path,color)))")
         .is("archived_at", null)
         .order("due_date")
         .order("due_time"),
@@ -428,6 +468,9 @@ export function AppShellV5({ initialTasks, initialMembers }: Props) {
       const dueTime = form.dueTime || "23:59";
       const nextTask: UiTask = {
         id,
+        courseId: course?.id,
+        taskTypeId: type?.id,
+        priority: form.priority,
         course: course?.name ?? "Sin materia",
         dueDate,
         dueTime,
@@ -443,6 +486,7 @@ export function AppShellV5({ initialTasks, initialMembers }: Props) {
         courseColor: course?.color,
         taskTypeColor: type?.color ?? undefined,
         courseCardSize: course?.cardSize,
+        linkedMaterials: [],
       };
       setTasks((current) => [...current, nextTask]);
       setSelectedTaskId(id);
@@ -473,6 +517,13 @@ export function AppShellV5({ initialTasks, initialMembers }: Props) {
     if (insertError) {
       setError(insertError.message);
     } else {
+      if (form.materialId) {
+        try {
+          await linkTaskMaterial(String(data.id), form.materialId);
+        } catch (linkError) {
+          setError(linkError instanceof Error ? linkError.message : "No se pudo enlazar el material.");
+        }
+      }
       if (email) await loadData(supabase, email);
       setSelectedTaskId(String(data.id));
       setTaskFormOpen(false);
@@ -481,8 +532,85 @@ export function AppShellV5({ initialTasks, initialMembers }: Props) {
     setCreatingTask(false);
   }
 
+  async function linkTaskMaterial(taskId: string, materialId: string) {
+    const response = await fetch(`/api/admin/tasks/${taskId}/materials`, {
+      method: "POST",
+      credentials: "include",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ materialId }),
+    });
+    const body = await response.json().catch(() => ({})) as { error?: string };
+    if (!response.ok) throw new Error(body.error ?? "No se pudo enlazar el material.");
+  }
+
+  async function updateTaskFromDetail(id: string, form: TaskForm) {
+    const title = form.title.trim();
+    if (!title) return false;
+
+    setError(null);
+
+    if (!supabase) {
+      const course = courses.find((item) => item.id === form.courseId);
+      const type = taskTypes.find((item) => item.id === form.typeId);
+      const dueDate = form.dueDate || new Date().toISOString().slice(0, 10);
+      const dueTime = form.dueTime || "23:59";
+      setTasks((current) => current.map((task) => task.id === id ? {
+        ...task,
+        courseId: course?.id,
+        taskTypeId: type?.id,
+        priority: form.priority,
+        course: course?.name ?? task.course,
+        dueDate,
+        dueTime,
+        title,
+        materialNeeded: form.materialNeeded.trim(),
+        materialUrl: form.materialUrl.trim(),
+        deliveryType: delivery(type?.name),
+        status: form.status,
+        daysRemaining: calculateDaysRemaining(dueDate),
+        notes: form.notes.trim(),
+        platformUrl: form.platformUrl.trim(),
+        visibleToReaders: form.visible,
+        courseColor: course?.color ?? task.courseColor,
+        taskTypeColor: type?.color ?? task.taskTypeColor,
+        courseCardSize: course?.cardSize ?? task.courseCardSize,
+      } : task));
+      return true;
+    }
+
+    try {
+      const response = await fetch(`/api/admin/tasks/${id}`, {
+        method: "PATCH",
+        credentials: "include",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          title,
+          course_id: form.courseId || null,
+          task_type_id: form.typeId || null,
+          due_date: form.dueDate,
+          due_time: form.dueTime || "23:59",
+          status: form.status,
+          priority: form.priority,
+          visible_to_students: form.visible,
+          material_needed: form.materialNeeded.trim() || null,
+          material_url: form.materialUrl.trim() || null,
+          platform_url: form.platformUrl.trim() || null,
+          notes: form.notes.trim() || null,
+        }),
+      });
+      const body = await response.json().catch(() => ({})) as { error?: string };
+      if (!response.ok) throw new Error(body.error ?? "No se pudo guardar la tarea.");
+      if (form.materialId) await linkTaskMaterial(id, form.materialId);
+      if (email) await loadData(supabase, email);
+      return true;
+    } catch (saveError) {
+      setError(saveError instanceof Error ? saveError.message : "No se pudo guardar la tarea.");
+      return false;
+    }
+  }
+
   async function markDone(id: string) {
-    if (!supabase || role !== "admin") return;
+    if (!supabase || !canEditTasks) return;
     const { error: updateError } = await supabase
       .from("tasks")
       .update({ status: "Entregado", visible_to_students: false, updated_at: new Date().toISOString() })
@@ -517,7 +645,7 @@ export function AppShellV5({ initialTasks, initialMembers }: Props) {
   const normalizedTasks = tasks.map((task) => {
     const daysRemaining = calculateDaysRemaining(task.dueDate);
     const status = deriveStatus(task.status, daysRemaining);
-    return { ...task, daysRemaining, status, visibleToReaders: deriveReaderVisibility({ status }) };
+    return { ...task, daysRemaining, status, visibleToReaders: task.visibleToReaders && deriveReaderVisibility({ status }) };
   });
 
   const activeTasks = normalizedTasks.filter((task) => task.status !== "Entregado" && task.status !== "Cancelado");
@@ -555,6 +683,7 @@ export function AppShellV5({ initialTasks, initialMembers }: Props) {
   function openNotification(notification: AppNotification) {
     void updateNotifications([notification.id], "read");
     setNotificationOpen(false);
+    setNotificationView("notifications");
     if (notification.entity === "tasks" && notification.entity_id) {
       openTaskDetail(notification.entity_id, "tasks");
     }
@@ -581,8 +710,14 @@ export function AppShellV5({ initialTasks, initialMembers }: Props) {
         <button
           className={`iconButton notificationButton ${notifications.length && !unreadNotifications ? "hasNotifications" : ""}`}
           aria-label={unreadNotifications ? `${unreadNotifications} avisos sin leer` : "Avisos"}
+          aria-expanded={notificationOpen}
+          aria-controls="notification-tray"
           title={unreadNotifications ? `${unreadNotifications} avisos sin leer` : "Avisos"}
-          onClick={() => setNotificationOpen((value) => !value)}
+          onClick={() => setNotificationOpen((value) => {
+            const next = !value;
+            if (!next) setNotificationView("notifications");
+            return next;
+          })}
           type="button"
         >
           <Bell size={21} />
@@ -604,9 +739,15 @@ export function AppShellV5({ initialTasks, initialMembers }: Props) {
       {error ? <div className="systemBanner">{error}</div> : null}
       <NotificationTray
         open={notificationOpen}
+        view={notificationView}
         notifications={notifications}
-        onClose={() => setNotificationOpen(false)}
+        onClose={() => {
+          setNotificationOpen(false);
+          setNotificationView("notifications");
+        }}
         onOpen={openNotification}
+        onSettings={() => setNotificationView("settings")}
+        onBack={() => setNotificationView("notifications")}
         onRefresh={() => void loadNotifications()}
         onRead={(ids) => void updateNotifications(ids, "read")}
         onDismiss={(ids) => void updateNotifications(ids, "dismiss")}
@@ -629,7 +770,7 @@ export function AppShellV5({ initialTasks, initialMembers }: Props) {
         {tab === "completed" ? <TaskList tasks={completedTasks} role="reader" selectedTask={null} density={prefs.taskDensity} onSelect={(id) => openTaskDetail(id, "completed")} onDone={() => undefined} completedOnly /> : null}
         {tab === "group" ? <Group members={members} supabase={supabase} role={role} profile={profile} onError={setError} /> : null}
         {tab === "prefs" ? <Preferences profile={profile} supabase={supabase} onProfile={setProfile} onError={setError} /> : null}
-        {tab === "taskDetail" ? <TaskDetailScreen task={selectedTask} role={role} onBack={() => go(detailOrigin)} onDone={(id) => void markDone(id)} /> : null}
+        {tab === "taskDetail" ? <TaskDetailScreen task={selectedTask} canEdit={canEditTasks} courses={courses} taskTypes={taskTypes} onBack={() => go(detailOrigin)} onDone={(id) => void markDone(id)} onSave={(id, form) => updateTaskFromDetail(id, form)} /> : null}
         {tab === "admin" ? (
           <AdminHub
             courses={courses}
@@ -704,17 +845,23 @@ function Drawer({ open, email, role, active, sourceLabel, onClose, onSelect, onS
 
 function NotificationTray({
   open,
+  view,
   notifications,
   onClose,
   onOpen,
+  onSettings,
+  onBack,
   onRefresh,
   onRead,
   onDismiss,
 }: {
   open: boolean;
+  view: "notifications" | "settings";
   notifications: AppNotification[];
   onClose: () => void;
   onOpen: (notification: AppNotification) => void;
+  onSettings: () => void;
+  onBack: () => void;
   onRefresh: () => void;
   onRead: (ids: string[]) => void;
   onDismiss: (ids: string[]) => void;
@@ -725,29 +872,46 @@ function NotificationTray({
   const unreadLabel = unreadIds.length ? `${unreadIds.length} sin leer` : "todo leído";
 
   return (
-    <section className="notificationTray" aria-label="Avisos">
+    <section id="notification-tray" className="notificationTray" aria-label={view === "settings" ? "Configuración de avisos" : "Avisos"}>
       <div className="notificationTrayHead">
-        <div><strong>Avisos</strong><span>{notifications.length} activos · {unreadLabel}</span></div>
-        <button aria-label="Cerrar avisos" onClick={onClose} type="button"><X size={16} /></button>
+        {view === "settings" ? (
+          <button className="notificationTrayIconButton" aria-label="Volver a avisos" title="Volver a avisos" onClick={onBack} type="button"><ArrowLeft size={16} /></button>
+        ) : null}
+        <div className="notificationTrayHeadContent">
+          <strong>{view === "settings" ? "Configuración" : "Avisos"}</strong>
+          <span>{view === "settings" ? "Elige cómo recibir novedades" : `${notifications.length} activos · ${unreadLabel}`}</span>
+        </div>
+        <div className="notificationTrayHeadActions">
+          {view === "notifications" ? (
+            <button className="notificationTrayIconButton" aria-label="Configurar avisos" title="Configurar avisos" aria-expanded={false} onClick={onSettings} type="button"><Settings size={16} /></button>
+          ) : null}
+          <button className="notificationTrayIconButton" aria-label="Cerrar avisos" title="Cerrar avisos" onClick={onClose} type="button"><X size={16} /></button>
+        </div>
       </div>
-      <div className="notificationTrayActions">
-        <button type="button" onClick={onRefresh}>Actualizar</button>
-        <button type="button" onClick={() => onRead(unreadIds)} disabled={!unreadIds.length}>Marcar leídos</button>
-        <button type="button" onClick={() => onDismiss(notifications.map((notification) => notification.id))} disabled={!notifications.length}>Limpiar</button>
-      </div>
-      <div className="notificationList">
-        {notifications.map((notification) => (
-          <article className={`notificationItem ${notification.read_at ? "" : "unread"} priority-${notification.priority}`} key={notification.id}>
-            <button type="button" onClick={() => onOpen(notification)}>
-              <strong>{notification.title}</strong>
-              {notification.body ? <span>{notification.body}</span> : null}
-              <small>{formatOptionalSync(notification.scheduled_for)}</small>
-            </button>
-            <button aria-label="Ocultar aviso" title="Ocultar" onClick={() => onDismiss([notification.id])} type="button"><X size={14} /></button>
-          </article>
-        ))}
-        {!notifications.length ? <p className="notificationEmpty">No hay avisos pendientes.</p> : null}
-      </div>
+      {view === "settings" ? (
+        <NotificationSettingsPanel />
+      ) : (
+        <>
+          <div className="notificationTrayActions">
+            <button type="button" onClick={onRefresh}>Actualizar</button>
+            <button type="button" onClick={() => onRead(unreadIds)} disabled={!unreadIds.length}>Marcar leídos</button>
+            <button type="button" onClick={() => onDismiss(notifications.map((notification) => notification.id))} disabled={!notifications.length}>Limpiar</button>
+          </div>
+          <div className="notificationList">
+            {notifications.map((notification) => (
+              <article className={`notificationItem ${notification.read_at ? "" : "unread"} priority-${notification.priority}`} key={notification.id}>
+                <button type="button" onClick={() => onOpen(notification)}>
+                  <strong>{notification.title}</strong>
+                  {notification.body ? <span>{notification.body}</span> : null}
+                  <small>{formatOptionalSync(notification.scheduled_for)}</small>
+                </button>
+                <button aria-label="Ocultar aviso" title="Ocultar" onClick={() => onDismiss([notification.id])} type="button"><X size={14} /></button>
+              </article>
+            ))}
+            {!notifications.length ? <p className="notificationEmpty">No hay avisos pendientes.</p> : null}
+          </div>
+        </>
+      )}
     </section>
   );
 }
@@ -872,7 +1036,35 @@ function Calendar({ tasks, cursor, setCursor, selectedTask, onSelect, onCreateDa
   );
 }
 
-function TaskDetailScreen({ task, role, onBack, onDone }: { task: UiTask | null; role: Role; onBack: () => void; onDone: (id: string) => void }) {
+function TaskDetailScreen({
+  task,
+  canEdit,
+  courses,
+  taskTypes,
+  onBack,
+  onDone,
+  onSave,
+}: {
+  task: UiTask | null;
+  canEdit: boolean;
+  courses: CourseConfig[];
+  taskTypes: TaskTypeConfig[];
+  onBack: () => void;
+  onDone: (id: string) => void;
+  onSave: (id: string, form: TaskForm) => Promise<boolean>;
+}) {
+  const [editing, setEditing] = useState(false);
+  const [saving, setSaving] = useState(false);
+  const [form, setForm] = useState<TaskForm>(() => task ? taskToForm(task, courses, taskTypes) : newTaskForm());
+
+  useEffect(() => {
+    if (!task) return;
+    setEditing(false);
+    setForm(taskToForm(task, courses, taskTypes));
+    // Reset the edit draft only when the selected task changes.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [task?.id]);
+
   if (!task) {
     return (
       <div className="taskDetailScreen empty">
@@ -886,6 +1078,20 @@ function TaskDetailScreen({ task, role, onBack, onDone }: { task: UiTask | null;
   const accent = task.taskTypeColor ?? task.courseColor ?? "#4285dc";
   const dateTime = formatTaskDateTime(task.dueDate, task.dueTime);
 
+  function change<K extends keyof TaskForm>(key: K, value: TaskForm[K]) {
+    setForm((current) => ({ ...current, [key]: value }));
+  }
+
+  async function submit(event: React.FormEvent<HTMLFormElement>) {
+    event.preventDefault();
+    const taskId = task?.id;
+    if (!taskId || saving || !form.title.trim()) return;
+    setSaving(true);
+    const saved = await onSave(taskId, form);
+    setSaving(false);
+    if (saved) setEditing(false);
+  }
+
   return (
     <div className="taskDetailScreen">
       <div className="detailToolbar">
@@ -897,7 +1103,8 @@ function TaskDetailScreen({ task, role, onBack, onDone }: { task: UiTask | null;
         <div className="detailToolbarActions">
           {task.materialUrl ? <a href={task.materialUrl} target="_blank" rel="noreferrer"><ExternalLink size={16} />Material</a> : null}
           {task.platformUrl ? <a href={task.platformUrl} target="_blank" rel="noreferrer"><ExternalLink size={16} />Plataforma</a> : null}
-          {role === "admin" && task.status !== "Entregado" ? <button onClick={() => onDone(task.id)} type="button"><Check size={16} />Entregada</button> : null}
+          {canEdit && !editing ? <button onClick={() => setEditing(true)} type="button"><Edit3 size={16} />Editar</button> : null}
+          {canEdit && task.status !== "Entregado" ? <button onClick={() => onDone(task.id)} type="button"><Check size={16} />Entregada</button> : null}
         </div>
       </div>
       <section className="detailSheet" style={{ borderTopColor: accent } as CSSProperties}>
@@ -905,22 +1112,168 @@ function TaskDetailScreen({ task, role, onBack, onDone }: { task: UiTask | null;
           <span style={{ background: accent }}>{task.deliveryType}</span>
           <h2>{task.title}</h2>
         </div>
-        <dl className="detailGrid">
-          <DetailField label="Actividad / tarea" value={task.title} />
-          <DetailField label="Materia" value={task.course} />
-          <DetailField label="Fecha de entrega" value={dateTime} icon={<CalendarClock size={17} />} />
-          <DetailField label="Hora" value={formatTaskTime(task.dueTime)} icon={<Clock size={17} />} />
-          <DetailField label="Material necesario" value={task.materialNeeded || "Sin material indicado"} wide />
-          <DetailField label="Tipo de entrega" wide>
-            <span className="deliveryTypeLarge" style={{ color: accent }}><FileCheck2 size={28} />{task.deliveryType}</span>
-          </DetailField>
-          <DetailField label="Estado" value={task.status} icon={<ClipboardCheck size={17} />} />
-          <DetailField label="Días restantes" value={String(task.daysRemaining)} />
-          {task.notes ? <DetailField label="Notas" value={task.notes} wide /> : null}
-          {task.calendarEventId ? <DetailField label="Evento calendario" value={task.calendarEventId} /> : null}
-          {task.lastSync ? <DetailField label="Última sincronización" value={formatOptionalSync(task.lastSync)} /> : null}
-        </dl>
+        {editing ? (
+          <TaskEditForm
+            form={form}
+            courses={courses}
+            taskTypes={taskTypes}
+            linkedMaterials={task.linkedMaterials ?? []}
+            busy={saving}
+            onChange={change}
+            onCancel={() => {
+              setForm(taskToForm(task, courses, taskTypes));
+              setEditing(false);
+            }}
+            onSubmit={submit}
+          />
+        ) : (
+          <dl className="detailGrid">
+            <DetailField label="Actividad / tarea" value={task.title} />
+            <DetailField label="Materia" value={task.course} />
+            <DetailField label="Fecha de entrega" value={dateTime} icon={<CalendarClock size={17} />} />
+            <DetailField label="Hora" value={formatTaskTime(task.dueTime)} icon={<Clock size={17} />} />
+            <DetailField label="Material necesario" value={task.materialNeeded || "Sin material indicado"} wide />
+            {task.linkedMaterials?.length ? (
+              <DetailField label="Materiales del bucket" wide>
+                <LinkedMaterialList materials={task.linkedMaterials} />
+              </DetailField>
+            ) : null}
+            <DetailField label="Tipo de entrega" wide>
+              <span className="deliveryTypeLarge" style={{ color: accent }}><FileCheck2 size={28} />{task.deliveryType}</span>
+            </DetailField>
+            <DetailField label="Estado" value={task.status} icon={<ClipboardCheck size={17} />} />
+            <DetailField label="Días restantes" value={String(task.daysRemaining)} />
+            {task.notes ? <DetailField label="Notas" value={task.notes} wide /> : null}
+            {task.calendarEventId ? <DetailField label="Evento calendario" value={task.calendarEventId} /> : null}
+            {task.lastSync ? <DetailField label="Última sincronización" value={formatOptionalSync(task.lastSync)} /> : null}
+          </dl>
+        )}
       </section>
+    </div>
+  );
+}
+
+function TaskEditForm({
+  form,
+  courses,
+  taskTypes,
+  linkedMaterials,
+  busy,
+  onChange,
+  onCancel,
+  onSubmit,
+}: {
+  form: TaskForm;
+  courses: CourseConfig[];
+  taskTypes: TaskTypeConfig[];
+  linkedMaterials: MaterialOption[];
+  busy: boolean;
+  onChange: TaskFormChange;
+  onCancel: () => void;
+  onSubmit: (event: React.FormEvent<HTMLFormElement>) => void;
+}) {
+  return (
+    <form className="taskForm detailEditForm" onSubmit={onSubmit}>
+      <label className="wide">Título<input value={form.title} onChange={(event) => onChange("title", event.target.value)} required /></label>
+      <label>Materia<select value={form.courseId} onChange={(event) => onChange("courseId", event.target.value)}>{courses.length ? courses.map((course) => <option key={course.id} value={course.id}>{course.name}</option>) : <option value="">Sin materias</option>}</select></label>
+      <label>Tipo<select value={form.typeId} onChange={(event) => onChange("typeId", event.target.value)}>{taskTypes.length ? taskTypes.map((type) => <option key={type.id} value={type.id}>{type.name}</option>) : <option value="">Tarea</option>}</select></label>
+      <label>Fecha<input type="date" value={form.dueDate} onChange={(event) => onChange("dueDate", event.target.value)} required /></label>
+      <label>Hora<input type="time" value={form.dueTime} onChange={(event) => onChange("dueTime", event.target.value)} /></label>
+      <label>Estado<select value={form.status} onChange={(event) => onChange("status", event.target.value as TaskStatus)}>{statuses.map((item) => <option key={item}>{item}</option>)}</select></label>
+      <label>Prioridad<select value={form.priority} onChange={(event) => onChange("priority", event.target.value)}><option>Alta</option><option>Media</option><option>Baja</option></select></label>
+      <label className="wide">Material necesario<input value={form.materialNeeded} onChange={(event) => onChange("materialNeeded", event.target.value)} /></label>
+      <label className="wide">Link material<input value={form.materialUrl} onChange={(event) => onChange("materialUrl", event.target.value)} /></label>
+      <BucketMaterialPicker form={form} onChange={onChange} />
+      {linkedMaterials.length ? (
+        <div className="taskLinkedMaterials wide">
+          <span>Materiales enlazados</span>
+          <LinkedMaterialList materials={linkedMaterials} />
+        </div>
+      ) : null}
+      <label className="wide">Link plataforma<input value={form.platformUrl} onChange={(event) => onChange("platformUrl", event.target.value)} /></label>
+      <label className="wide">Notas<textarea value={form.notes} onChange={(event) => onChange("notes", event.target.value)} /></label>
+      <label className="taskCheck"><input type="checkbox" checked={form.visible} onChange={(event) => onChange("visible", event.target.checked)} /> Visible para alumnos</label>
+      <div className="detailEditActions">
+        <button type="button" onClick={onCancel} disabled={busy}>Cancelar</button>
+        <button className="primaryAction" disabled={busy || !form.title.trim()} type="submit">{busy ? "Guardando..." : "Guardar cambios"}</button>
+      </div>
+    </form>
+  );
+}
+
+function BucketMaterialPicker({ form, onChange }: { form: TaskForm; onChange: TaskFormChange }) {
+  const [query, setQuery] = useState("");
+  const [materials, setMaterials] = useState<MaterialOption[]>([]);
+  const [loading, setLoading] = useState(false);
+  const [loadError, setLoadError] = useState<string | null>(null);
+
+  useEffect(() => {
+    const controller = new AbortController();
+    const timeout = window.setTimeout(async () => {
+      setLoading(true);
+      setLoadError(null);
+      try {
+        const params = new URLSearchParams();
+        params.set("limit", "200");
+        if (query.trim()) params.set("q", query.trim());
+        const response = await fetch(`/api/materials/library?${params.toString()}`, {
+          credentials: "include",
+          signal: controller.signal,
+        });
+        const body = await response.json().catch(() => ({})) as MaterialLibraryPayload;
+        if (!response.ok || body.error) throw new Error(body.error ?? "No se pudieron cargar materiales.");
+        setMaterials(body.materials ?? []);
+      } catch (error) {
+        if (error instanceof DOMException && error.name === "AbortError") return;
+        setLoadError(error instanceof Error ? error.message : "No se pudieron cargar materiales.");
+      } finally {
+        if (!controller.signal.aborted) setLoading(false);
+      }
+    }, 250);
+
+    return () => {
+      window.clearTimeout(timeout);
+      controller.abort();
+    };
+  }, [query]);
+
+  function selectMaterial(materialId: string) {
+    onChange("materialId", materialId);
+    const material = materials.find((item) => item.id === materialId);
+    if (!material) return;
+    const url = materialUrl(material);
+    if (url) onChange("materialUrl", url);
+    if (!form.materialNeeded.trim()) onChange("materialNeeded", cleanMaterialTitle(material.title));
+  }
+
+  const selected = materials.find((item) => item.id === form.materialId);
+
+  return (
+    <div className="bucketMaterialPicker wide">
+      <label>Buscar en bucket<input value={query} onChange={(event) => setQuery(event.target.value)} placeholder="Nombre del archivo o carpeta" /></label>
+      <label>Archivo de materiales<select value={form.materialId} onChange={(event) => selectMaterial(event.target.value)} aria-label="Agregar archivo de materiales del bucket">
+        <option value="">Sin archivo seleccionado</option>
+        {materials.map((material) => (
+          <option key={material.id} value={material.id}>{cleanMaterialTitle(material.title)}{material.section?.name ? ` · ${material.section.name}` : ""}</option>
+        ))}
+      </select></label>
+      {selected ? <small>Se enlazará: {selected.r2_key ?? selected.file_name ?? selected.title}</small> : loading ? <small>Cargando materiales...</small> : loadError ? <small className="formError">{loadError}</small> : null}
+    </div>
+  );
+}
+
+function LinkedMaterialList({ materials }: { materials: MaterialOption[] }) {
+  return (
+    <div className="linkedMaterialList">
+      {materials.map((material) => {
+        const url = materialUrl(material);
+        const label = cleanMaterialTitle(material.title);
+        return url ? (
+          <a key={material.id} href={url} target="_blank" rel="noreferrer"><FileText size={15} />{label}</a>
+        ) : (
+          <span key={material.id}><FileText size={15} />{label}</span>
+        );
+      })}
     </div>
   );
 }
@@ -1036,10 +1389,11 @@ function TaskCreateModal({
           <label>Tipo<select value={form.typeId} onChange={(event) => onChange("typeId", event.target.value)}>{taskTypes.length ? taskTypes.map((type) => <option key={type.id} value={type.id}>{type.name}</option>) : <option value="">Tarea</option>}</select></label>
           <label>Fecha<input type="date" value={form.dueDate} onChange={(event) => onChange("dueDate", event.target.value)} required /></label>
           <label>Hora<input type="time" value={form.dueTime} onChange={(event) => onChange("dueTime", event.target.value)} /></label>
-          <label>Estado<select value={form.status} onChange={(event) => onChange("status", event.target.value as TaskStatus)}><option>Pendiente</option><option>Se entrega hoy</option><option>Entregado</option><option>Reprogramado</option><option>Cancelado</option></select></label>
+          <label>Estado<select value={form.status} onChange={(event) => onChange("status", event.target.value as TaskStatus)}>{statuses.map((item) => <option key={item}>{item}</option>)}</select></label>
           <label>Prioridad<select value={form.priority} onChange={(event) => onChange("priority", event.target.value)}><option>Alta</option><option>Media</option><option>Baja</option></select></label>
           <label className="wide">Material necesario<input value={form.materialNeeded} onChange={(event) => onChange("materialNeeded", event.target.value)} /></label>
           <label className="wide">Link material<input value={form.materialUrl} onChange={(event) => onChange("materialUrl", event.target.value)} /></label>
+          <BucketMaterialPicker form={form} onChange={onChange} />
           <label className="wide">Link plataforma<input value={form.platformUrl} onChange={(event) => onChange("platformUrl", event.target.value)} /></label>
           <label className="wide">Notas<textarea value={form.notes} onChange={(event) => onChange("notes", event.target.value)} /></label>
           <label className="taskCheck"><input type="checkbox" checked={form.visible} onChange={(event) => onChange("visible", event.target.checked)} /> Visible para alumnos</label>
@@ -1384,7 +1738,35 @@ function toProfile(row: Record<string, unknown>): Profile {
 }
 function toCourse(row: Record<string, unknown>): CourseConfig { return { id: String(row.id), name: String(row.name), shortName: String(row.short_name ?? row.name), color: String(row.color ?? "#4285dc"), icon: String(row.icon ?? "book"), cardSize: cardSize(row.card_size), active: Boolean(row.active ?? true) }; }
 function toSection(row: Record<string, unknown>): SectionConfig { return { id: String(row.id), name: String(row.name), path: String(row.path), color: String(row.color ?? "#4285dc"), icon: String(row.icon ?? "folder"), cardSize: cardSize(row.card_size), previewStyle: String(row.preview_style ?? "thumbnail"), active: Boolean(row.active ?? true) }; }
-function toTask(row: Record<string, unknown>): UiTask { const course = asOne(row.courses as Record<string, unknown> | Record<string, unknown>[] | null); const type = asOne(row.task_types as Record<string, unknown> | Record<string, unknown>[] | null); const dueDate = String(row.due_date); const daysRemaining = calculateDaysRemaining(dueDate); const next = deriveStatus(status(row.status), daysRemaining); return { id: String(row.id), course: String(course?.name ?? "Sin materia"), dueDate, dueTime: String(row.due_time ?? "23:59").slice(0, 5), title: String(row.title ?? "Sin título"), materialNeeded: row.material_needed ? String(row.material_needed) : "", materialUrl: row.material_url ? String(row.material_url) : "", deliveryType: delivery(type?.name), status: next, daysRemaining, notes: row.notes ? String(row.notes) : "", platformUrl: row.platform_url ? String(row.platform_url) : "", visibleToReaders: Boolean(row.visible_to_students), courseColor: course?.color ? String(course.color) : undefined, taskTypeColor: type?.color ? String(type.color) : undefined, courseCardSize: cardSize(course?.card_size) }; }
+function toTask(row: Record<string, unknown>): UiTask {
+  const course = asOne(row.courses as Record<string, unknown> | Record<string, unknown>[] | null);
+  const type = asOne(row.task_types as Record<string, unknown> | Record<string, unknown>[] | null);
+  const dueDate = String(row.due_date);
+  const daysRemaining = calculateDaysRemaining(dueDate);
+  const next = deriveStatus(status(row.status), daysRemaining);
+  return {
+    id: String(row.id),
+    courseId: row.course_id ? String(row.course_id) : course?.id ? String(course.id) : undefined,
+    taskTypeId: row.task_type_id ? String(row.task_type_id) : type?.id ? String(type.id) : undefined,
+    priority: row.priority ? String(row.priority) : "Media",
+    course: String(course?.name ?? "Sin materia"),
+    dueDate,
+    dueTime: String(row.due_time ?? "23:59").slice(0, 5),
+    title: String(row.title ?? "Sin título"),
+    materialNeeded: row.material_needed ? String(row.material_needed) : "",
+    materialUrl: row.material_url ? String(row.material_url) : "",
+    deliveryType: delivery(type?.name),
+    status: next,
+    daysRemaining,
+    notes: row.notes ? String(row.notes) : "",
+    platformUrl: row.platform_url ? String(row.platform_url) : "",
+    visibleToReaders: Boolean(row.visible_to_students),
+    courseColor: course?.color ? String(course.color) : undefined,
+    taskTypeColor: type?.color ? String(type.color) : undefined,
+    courseCardSize: cardSize(course?.card_size),
+    linkedMaterials: toTaskLinkedMaterials(row.task_materials),
+  };
+}
 function toGroupMember(row: Record<string, unknown>): UiGroupMember {
   const email = String(row.email ?? "");
   const fallbackControl = email.includes("@") ? email.split("@")[0] : String(row.id ?? "");
@@ -1415,6 +1797,70 @@ function toGroupValueStore(rows: GroupValueRow[]): GroupValueStore {
     return store;
   }, {});
 }
+
+function toTaskLinkedMaterials(value: unknown): MaterialOption[] {
+  if (!Array.isArray(value)) return [];
+  return value.flatMap((item) => {
+    const relation = item as { materials?: unknown };
+    const material = relation.materials;
+    const rows = Array.isArray(material) ? material : material ? [material] : [];
+    return rows.map(toMaterialOption);
+  });
+}
+
+function toMaterialOption(value: unknown): MaterialOption {
+  const row = value as Record<string, unknown>;
+  const sectionValue = row.section ?? row.material_sections;
+  const section = asOne(sectionValue as Record<string, unknown> | Record<string, unknown>[] | null);
+  return {
+    id: String(row.id),
+    title: String(row.title ?? row.file_name ?? "Material"),
+    material_type: row.material_type ? String(row.material_type) : null,
+    provider: row.provider ? String(row.provider) : null,
+    source_url: row.source_url ? String(row.source_url) : null,
+    preview_url: row.preview_url ? String(row.preview_url) : null,
+    thumbnail_url: row.thumbnail_url ? String(row.thumbnail_url) : null,
+    public_url: row.public_url ? String(row.public_url) : null,
+    r2_key: row.r2_key ? String(row.r2_key) : null,
+    file_name: row.file_name ? String(row.file_name) : null,
+    content_type: row.content_type ? String(row.content_type) : null,
+    size_bytes: typeof row.size_bytes === "number" ? row.size_bytes : null,
+    section_id: row.section_id ? String(row.section_id) : null,
+    section: section ? {
+      id: String(section.id),
+      name: String(section.name),
+      path: String(section.path),
+      color: section.color ? String(section.color) : null,
+    } : null,
+  };
+}
+
+function taskToForm(task: UiTask, courses: CourseConfig[], taskTypes: TaskTypeConfig[]): TaskForm {
+  return newTaskForm({
+    title: task.title,
+    courseId: task.courseId ?? courses.find((course) => course.name === task.course)?.id ?? courses[0]?.id ?? "",
+    typeId: task.taskTypeId ?? taskTypes.find((type) => type.name === task.deliveryType)?.id ?? taskTypes[0]?.id ?? "",
+    dueDate: task.dueDate,
+    dueTime: task.dueTime || "23:59",
+    status: task.status,
+    priority: task.priority ?? "Media",
+    visible: task.visibleToReaders,
+    materialUrl: task.materialUrl ?? "",
+    platformUrl: task.platformUrl ?? "",
+    notes: task.notes ?? "",
+    materialNeeded: task.materialNeeded ?? "",
+    materialId: "",
+  });
+}
+
+function materialUrl(material: MaterialOption) {
+  return material.public_url ?? material.preview_url ?? material.source_url ?? "";
+}
+
+function cleanMaterialTitle(value: string) {
+  return value.replace(/^_+/, "").replace(/\.pdf$/i, ".pdf");
+}
+
 function normalizePreferences(value: unknown): UserPreferences {
   const input = typeof value === "object" && value ? value as Partial<UserPreferences> : {};
   return {

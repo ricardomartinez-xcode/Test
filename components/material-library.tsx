@@ -86,7 +86,7 @@ export function MaterialLibrary({ previewSize, globalQuery = "" }: MaterialLibra
     if (!hasSupabaseConfig) {
       setLoading(false);
       setError(null);
-      setData(buildDemoLibrary(query, sectionId));
+      setData(buildDemoLibrary(query, allSectionId));
       return;
     }
 
@@ -95,7 +95,6 @@ export function MaterialLibrary({ previewSize, globalQuery = "" }: MaterialLibra
 
     const params = new URLSearchParams();
     if (query.trim()) params.set("q", query.trim());
-    if (sectionId !== allSectionId) params.set("sectionId", sectionId);
     params.set("limit", "400");
 
     try {
@@ -114,13 +113,24 @@ export function MaterialLibrary({ previewSize, globalQuery = "" }: MaterialLibra
     }
   }
 
+  const visibleSections = useMemo(() => normalizeVisibleSections(data?.sections ?? []), [data]);
   const selectedSection = useMemo(() => {
-    if (!data || sectionId === allSectionId) return null;
-    return data.sections.find((section) => section.id === sectionId) ?? null;
-  }, [data, sectionId]);
+    if (sectionId === allSectionId) return null;
+    return visibleSections.find((section) => section.id === sectionId) ?? null;
+  }, [sectionId, visibleSections]);
+  const materials = useMemo(() => {
+    const rows = data?.materials ?? [];
+    if (sectionId === allSectionId) return rows;
+    const selected = visibleSections.find((section) => section.id === sectionId);
+    if (!selected) return [];
+    return rows.filter((material) => material.section ? normalizedSectionId(material.section) === selected.id : false);
+  }, [data, sectionId, visibleSections]);
 
-  const visibleSections = data?.sections ?? [];
-  const materials = data?.materials ?? [];
+  useEffect(() => {
+    if (sectionId !== allSectionId && data && !visibleSections.some((section) => section.id === sectionId)) {
+      setSectionId(allSectionId);
+    }
+  }, [data, sectionId, visibleSections]);
 
   return (
     <div className={`libraryShell preview-${previewSize}`}>
@@ -131,7 +141,7 @@ export function MaterialLibrary({ previewSize, globalQuery = "" }: MaterialLibra
           <p>{selectedSection ? selectedSection.path : "Explora carpetas, filtra por sección y abre assets directamente desde R2."}</p>
         </div>
         <div className="libraryStats">
-          <strong>{data?.summary.materials ?? 0}</strong>
+          <strong>{materials.length}</strong>
           <span>assets R2</span>
         </div>
       </section>
@@ -277,6 +287,40 @@ function formatBytes(value: number | null) {
 function pdfPreviewUrl(value: string) {
   if (value.includes("#")) return value;
   return `${value}#toolbar=0&navpanes=0&scrollbar=0&page=1&view=FitH`;
+}
+
+function normalizeVisibleSections(sections: LibrarySection[]) {
+  const grouped = new Map<string, LibrarySection>();
+
+  for (const section of sections) {
+    if (section.material_count <= 0) continue;
+    const id = normalizedSectionId(section);
+    const current = grouped.get(id);
+    if (!current) {
+      grouped.set(id, { ...section, id });
+      continue;
+    }
+
+    grouped.set(id, {
+      ...current,
+      material_count: current.material_count + section.material_count,
+      path: shortestPath(current.path, section.path),
+      color: current.color ?? section.color,
+      icon: current.icon ?? section.icon,
+      sort_order: Math.min(current.sort_order ?? 0, section.sort_order ?? 0),
+    });
+  }
+
+  return Array.from(grouped.values()).sort((a, b) => (a.sort_order ?? 0) - (b.sort_order ?? 0) || a.name.localeCompare(b.name, "es"));
+}
+
+function normalizedSectionId(section: Pick<LibrarySection, "name" | "path">) {
+  const parts = section.path.split("/").map((part) => part.trim()).filter(Boolean);
+  return `section:${slug(parts.at(-1) ?? section.name)}`;
+}
+
+function shortestPath(a: string, b: string) {
+  return a.length <= b.length ? a : b;
 }
 
 function buildDemoLibrary(query: string, sectionId: string): LibraryResponse {
