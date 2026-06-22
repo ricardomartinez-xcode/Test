@@ -8,6 +8,12 @@ const patchSchema = z.object({
   action: z.enum(["read", "dismiss"]),
 });
 
+const emailPreferenceSchema = z.object({
+  emailEnabled: z.boolean(),
+});
+
+const preferenceSelect = "profile_id,in_app_enabled,email_enabled,due_soon_hours,categories";
+
 export async function GET() {
   try {
     const supabase = await createSupabaseServerClient();
@@ -25,7 +31,7 @@ export async function GET() {
         .limit(80),
       supabase
         .from("notification_preferences")
-        .select("profile_id,in_app_enabled,email_enabled,due_soon_hours,categories")
+        .select(preferenceSelect)
         .eq("profile_id", profile.id)
         .maybeSingle(),
     ]);
@@ -35,6 +41,7 @@ export async function GET() {
 
     return NextResponse.json({
       ok: true,
+      profileId: profile.id,
       notifications: notifications.data ?? [],
       unread: (notifications.data ?? []).filter((notification) => !notification.read_at).length,
       preferences: preferences.data ?? null,
@@ -62,6 +69,32 @@ export async function PATCH(request: Request) {
 
     if (error) throw new Error(error.message);
     return NextResponse.json({ ok: true });
+  } catch (error) {
+    return errorResponse(error);
+  }
+}
+
+export async function PUT(request: Request) {
+  try {
+    const supabase = await createSupabaseServerClient();
+    const profile = await requireProfile(supabase);
+    const body = emailPreferenceSchema.parse(await request.json());
+
+    const { data, error } = await supabase
+      .from("notification_preferences")
+      .upsert(
+        {
+          profile_id: profile.id,
+          email_enabled: body.emailEnabled,
+          updated_at: new Date().toISOString(),
+        },
+        { onConflict: "profile_id" },
+      )
+      .select(preferenceSelect)
+      .single();
+
+    if (error) throw new Error(error.message);
+    return NextResponse.json({ ok: true, preferences: data });
   } catch (error) {
     return errorResponse(error);
   }

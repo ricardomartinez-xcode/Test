@@ -1,6 +1,7 @@
 import { NextResponse } from "next/server";
 import { z } from "zod";
 import { errorResponse, requirePermission, requireProfile } from "@/lib/server/authz";
+import { deliverAnnouncementEmails, type AnnouncementNotification } from "@/lib/server/notification-email";
 import { createSupabaseServerClient } from "@/lib/supabase/server";
 
 const notificationSchema = z.object({
@@ -66,12 +67,16 @@ export async function POST(request: Request) {
       created_by: profile.id,
     }));
 
-    if (!rows.length) return NextResponse.json({ ok: true, inserted: 0 });
+    if (!rows.length) return NextResponse.json({ ok: true, inserted: 0, email: { configured: false, considered: 0, delivered: 0, skipped: 0, failed: 0, errors: [] } });
 
-    const { error } = await supabase.from("notifications").insert(rows);
+    const { data: insertedRows, error } = await supabase
+      .from("notifications")
+      .insert(rows)
+      .select("id,profile_id,kind,priority,title,body,action_url");
     if (error) throw new Error(error.message);
 
-    return NextResponse.json({ ok: true, inserted: rows.length });
+    const email = await deliverAnnouncementEmails((insertedRows ?? []) as AnnouncementNotification[]);
+    return NextResponse.json({ ok: true, inserted: rows.length, email });
   } catch (error) {
     return errorResponse(error);
   }
