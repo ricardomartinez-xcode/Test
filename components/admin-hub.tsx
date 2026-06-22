@@ -58,6 +58,7 @@ type ImportResult = {
   error?: string;
 };
 type AdminNotification = { id: string; profile_id: string | null; kind: string; priority: string; title: string; body: string; read_at: string | null; dismissed_at: string | null; created_at: string };
+type EmailDispatchResult = { configured: boolean; considered: number; delivered: number; skipped: number; failed: number; errors: string[] };
 type ReportPayload = { ok?: boolean; tasks?: ReportRow[]; materials?: ReportRow[]; students?: ReportRow[]; audit?: ReportRow[]; error?: string };
 type ReportRow = Record<string, string | number | boolean | null>;
 
@@ -241,7 +242,7 @@ export function AdminHub({ courses, sections, profile = null, supabase, reload, 
       {activeTab === "courses" ? <CoursesPanel courses={courses} onCreate={(input) => createCourse(input)} onUpdate={(id, patch) => updateCourse(id, patch)} /> : null}
       {activeTab === "sections" ? <SectionsPanel sections={sections} onUpdate={(id, patch) => void updateSection(id, patch)} /> : null}
       {activeTab === "materials" ? <MaterialUploadPanel sections={sections} canManageR2={Boolean(profile?.canManageR2 || profile?.role === "owner")} supabase={supabase} reload={reload} onError={onError} /> : null}
-      {activeTab === "users" ? <UsersPanel profiles={profiles} loading={loadingUsers} onCreate={(input) => createStudent(input)} onReload={() => void loadProfiles()} onUpdate={(id, patch) => updateProfile(id, patch)} /> : null}
+      {activeTab === "users" ? <UsersPanel profiles={profiles} loading={loadingUsers} canManagePermissions={profile?.role === "owner"} onCreate={(input) => createStudent(input)} onReload={() => void loadProfiles()} onUpdate={(id, patch) => updateProfile(id, patch)} /> : null}
       {activeTab === "notifications" ? <NotificationsPanel onError={onError} /> : null}
       {activeTab === "reports" ? <ReportsPanel onError={onError} /> : null}
       {activeTab === "diagnostics" ? <DiagnosticsPanel canManageR2={Boolean(profile?.canManageR2 || profile?.role === "owner")} supabase={supabase} reload={reload} onError={onError} /> : null}
@@ -254,6 +255,13 @@ function GeneralPanel({ stats }: { stats: { courses: number; sections: number; a
 }
 
 function MetricCard({ label, value, help }: { label: string; value: string | number; help: string }) { return <article className="metricCard"><span>{label}</span><strong>{value}</strong><small>{help}</small></article>; }
+
+function notificationResultLabel(inserted: number, email?: EmailDispatchResult) {
+  if (!email) return `${inserted} avisos creados`;
+  if (!email.configured) return `${inserted} avisos creados · correo no configurado`;
+  const failed = email.failed ? ` · ${email.failed} fallidos` : "";
+  return `${inserted} avisos creados · ${email.delivered} correos enviados${failed}`;
+}
 
 function NotificationsPanel({ onError }: { onError: (error: string | null) => void }) {
   const [title, setTitle] = useState("");
@@ -293,9 +301,9 @@ function NotificationsPanel({ onError }: { onError: (error: string | null) => vo
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ title, body, audience, priority, kind }),
       });
-      const payload = await response.json() as { inserted?: number; error?: string };
+      const payload = await response.json() as { inserted?: number; email?: EmailDispatchResult; error?: string };
       if (!response.ok) throw new Error(payload.error ?? "No se pudo enviar el aviso.");
-      setResult(`${payload.inserted ?? 0} avisos creados`);
+      setResult(notificationResultLabel(payload.inserted ?? 0, payload.email));
       setTitle("");
       setBody("");
       await loadRecent();
@@ -723,7 +731,7 @@ function MaterialUploadPanel({ sections, canManageR2, supabase, reload, onError 
   return <section className="adminCard"><div className="adminCardHead"><div><h3>Subir material</h3><p>Guarda el archivo en R2 y registra la metadata en Supabase.</p></div></div><form className="adminUpload" onSubmit={submit}><label>Destino<select value={destinationId} onChange={(event) => setDestinationId(event.target.value)}>{destinations.map((destination) => <option key={destination.id} value={destination.id}>{destination.path}{destination.source === "r2" ? " (R2)" : ""}</option>)}</select></label><label>Título<input value={title} onChange={(event) => setTitle(event.target.value)} placeholder="Opcional" /></label><label>Archivo<input type="file" onChange={(event) => setFile(event.target.files?.[0] ?? null)} /></label><button className="primaryAction" disabled={busy} type="submit">{busy ? "Subiendo..." : "Subir a R2"}</button></form></section>;
 }
 
-function UsersPanel({ profiles, loading, onCreate, onReload, onUpdate }: { profiles: AppProfileRow[]; loading: boolean; onCreate: (input: StudentDraft) => Promise<boolean>; onReload: () => void; onUpdate: (id: string, patch: Partial<AppProfileRow>) => Promise<boolean> }) {
+function UsersPanel({ profiles, loading, canManagePermissions, onCreate, onReload, onUpdate }: { profiles: AppProfileRow[]; loading: boolean; canManagePermissions: boolean; onCreate: (input: StudentDraft) => Promise<boolean>; onReload: () => void; onUpdate: (id: string, patch: Partial<AppProfileRow>) => Promise<boolean> }) {
   const [draft, setDraft] = useState<StudentDraft>(() => emptyStudentDraft());
   const [busy, setBusy] = useState(false);
 
@@ -746,7 +754,7 @@ function UsersPanel({ profiles, loading, onCreate, onReload, onUpdate }: { profi
       </form>
       <div className="adminUserList">
         {profiles.map((profile) => (
-          <UserAdminRow key={profile.id} profile={profile} onUpdate={onUpdate} />
+          <UserAdminRow key={profile.id} profile={profile} canManagePermissions={canManagePermissions} onUpdate={onUpdate} />
         ))}
         {!profiles.length && !loading ? <p className="muted">No se pudieron cargar usuarios o no hay permisos RLS para leerlos.</p> : null}
       </div>
@@ -754,7 +762,7 @@ function UsersPanel({ profiles, loading, onCreate, onReload, onUpdate }: { profi
   );
 }
 
-function UserAdminRow({ profile, onUpdate }: { profile: AppProfileRow; onUpdate: (id: string, patch: Partial<AppProfileRow>) => Promise<boolean> }) {
+function UserAdminRow({ profile, canManagePermissions, onUpdate }: { profile: AppProfileRow; canManagePermissions: boolean; onUpdate: (id: string, patch: Partial<AppProfileRow>) => Promise<boolean> }) {
   const [draft, setDraft] = useState(() => profileToDraft(profile));
   const [saving, setSaving] = useState(false);
 
@@ -782,21 +790,21 @@ function UserAdminRow({ profile, onUpdate }: { profile: AppProfileRow; onUpdate:
         <input aria-label="Correo" type="email" value={draft.email} onChange={(event) => setDraft((current) => ({ ...current, email: event.target.value }))} />
         <input aria-label="No. Control" value={draft.controlNumber} onChange={(event) => setDraft((current) => ({ ...current, controlNumber: event.target.value }))} placeholder="sin control" />
       </div>
-      <select value={profile.role} onChange={(event) => void onUpdate(profile.id, { role: event.target.value as AppProfileRow["role"] })}><option value="student">Alumno</option><option value="admin">Admin</option><option value="owner">Owner</option></select>
+      <select value={profile.role} disabled={!canManagePermissions} onChange={(event) => void onUpdate(profile.id, { role: event.target.value as AppProfileRow["role"] })}><option value="student">Alumno</option><option value="admin">Admin</option><option value="owner">Owner</option></select>
       <div className="adminUserActions">
         <button type="button" onClick={() => void save()} disabled={saving || !dirty || !draft.email.trim() || !draft.fullName.trim()}>{saving ? "Guardando..." : "Guardar"}</button>
         <button type="button" onClick={() => void onUpdate(profile.id, { active: !profile.active })}>{profile.active ? "Desactivar" : "Activar"}</button>
       </div>
       <div className="adminPermissionGrid">
-        <label><input type="checkbox" checked={profile.can_edit_tasks} onChange={(event) => void onUpdate(profile.id, { can_edit_tasks: event.target.checked })} />Tareas</label>
-        <label><input type="checkbox" checked={profile.can_delete_tasks} onChange={(event) => void onUpdate(profile.id, { can_delete_tasks: event.target.checked })} />Eliminar</label>
-        <label><input type="checkbox" checked={profile.can_manage_materials} onChange={(event) => void onUpdate(profile.id, { can_manage_materials: event.target.checked })} />Materiales</label>
-        <label><input type="checkbox" checked={profile.can_manage_users} onChange={(event) => void onUpdate(profile.id, { can_manage_users: event.target.checked })} />Usuarios</label>
-        <label><input type="checkbox" checked={profile.can_manage_settings} onChange={(event) => void onUpdate(profile.id, { can_manage_settings: event.target.checked })} />Ajustes</label>
-        <label><input type="checkbox" checked={profile.can_manage_group} onChange={(event) => void onUpdate(profile.id, { can_manage_group: event.target.checked })} />Grupo</label>
-        <label><input type="checkbox" checked={profile.can_manage_notifications} onChange={(event) => void onUpdate(profile.id, { can_manage_notifications: event.target.checked })} />Avisos</label>
-        <label><input type="checkbox" checked={profile.can_view_reports} onChange={(event) => void onUpdate(profile.id, { can_view_reports: event.target.checked })} />Reportes</label>
-        <label><input type="checkbox" checked={profile.can_manage_r2} onChange={(event) => void onUpdate(profile.id, { can_manage_r2: event.target.checked })} />R2</label>
+        <label><input type="checkbox" disabled={!canManagePermissions} checked={profile.can_edit_tasks} onChange={(event) => void onUpdate(profile.id, { can_edit_tasks: event.target.checked })} />Tareas</label>
+        <label><input type="checkbox" disabled={!canManagePermissions} checked={profile.can_delete_tasks} onChange={(event) => void onUpdate(profile.id, { can_delete_tasks: event.target.checked })} />Eliminar</label>
+        <label><input type="checkbox" disabled={!canManagePermissions} checked={profile.can_manage_materials} onChange={(event) => void onUpdate(profile.id, { can_manage_materials: event.target.checked })} />Materiales</label>
+        <label><input type="checkbox" disabled={!canManagePermissions} checked={profile.can_manage_users} onChange={(event) => void onUpdate(profile.id, { can_manage_users: event.target.checked })} />Usuarios</label>
+        <label><input type="checkbox" disabled={!canManagePermissions} checked={profile.can_manage_settings} onChange={(event) => void onUpdate(profile.id, { can_manage_settings: event.target.checked })} />Ajustes</label>
+        <label><input type="checkbox" disabled={!canManagePermissions} checked={profile.can_manage_group} onChange={(event) => void onUpdate(profile.id, { can_manage_group: event.target.checked })} />Grupo</label>
+        <label><input type="checkbox" disabled={!canManagePermissions} checked={profile.can_manage_notifications} onChange={(event) => void onUpdate(profile.id, { can_manage_notifications: event.target.checked })} />Avisos</label>
+        <label><input type="checkbox" disabled={!canManagePermissions} checked={profile.can_view_reports} onChange={(event) => void onUpdate(profile.id, { can_view_reports: event.target.checked })} />Reportes</label>
+        <label><input type="checkbox" disabled={!canManagePermissions} checked={profile.can_manage_r2} onChange={(event) => void onUpdate(profile.id, { can_manage_r2: event.target.checked })} />R2</label>
       </div>
     </article>
   );

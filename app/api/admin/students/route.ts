@@ -13,6 +13,7 @@ const studentInputSchema = z.object({
 
 type ManagerProfile = {
   id: string;
+  email: string;
   role: "student" | "admin" | "owner";
   active: boolean;
   can_manage_users: boolean;
@@ -35,8 +36,8 @@ async function requireStudentManager() {
 
   const { data: profile, error: profileError } = await supabase
     .from("app_profiles")
-    .select("id,role,active,can_manage_users")
-    .eq("auth_user_id", user.id)
+    .select("id,email,role,active,can_manage_users")
+    .or(`auth_user_id.eq.${user.id},email.eq.${user.email?.toLowerCase() ?? ""}`)
     .maybeSingle();
 
   if (profileError || !profile) {

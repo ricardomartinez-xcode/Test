@@ -1,6 +1,7 @@
 "use client";
 
 import { FormEvent, useCallback, useEffect, useMemo, useState } from "react";
+import Link from "next/link";
 import { createSupabaseBrowserClient } from "@/lib/supabase/client";
 import styles from "./academic-manager.module.css";
 
@@ -25,6 +26,8 @@ type Student = {
   created_at: string;
 };
 type ManagerProfile = {
+  id: string;
+  email: string;
   role: "student" | "admin" | "owner";
   active: boolean;
   can_manage_settings: boolean;
@@ -87,8 +90,8 @@ export function AcademicManager() {
 
       const { data: profileData, error: profileError } = await supabase
         .from("app_profiles")
-        .select("role,active,can_manage_settings,can_manage_users")
-        .eq("auth_user_id", user.id)
+        .select("id,email,role,active,can_manage_settings,can_manage_users")
+        .or(`auth_user_id.eq.${user.id},email.eq.${user.email?.toLowerCase() ?? ""}`)
         .maybeSingle();
       if (profileError || !profileData) throw new Error("No se encontró tu perfil administrativo.");
 
@@ -214,7 +217,7 @@ export function AcademicManager() {
             <h1>Materias y alumnos</h1>
             <p className={styles.lead}>Crea materias, invita alumnos por correo y consulta el directorio del grupo.</p>
           </div>
-          <a className={styles.backLink} href="/">Volver al espacio</a>
+          <Link className={styles.backLink} href="/">Volver al espacio</Link>
         </header>
 
         {notice ? <p className={notice.tone === "error" ? styles.error : styles.success}>{notice.message}</p> : null}
@@ -225,7 +228,7 @@ export function AcademicManager() {
           <section className={styles.accessCard}>
             <h2>Acceso requerido</h2>
             <p>Inicia sesión con una cuenta administradora u owner para continuar.</p>
-            <a href="/">Ir a iniciar sesión</a>
+            <Link href="/">Ir a iniciar sesión</Link>
           </section>
         ) : null}
 
