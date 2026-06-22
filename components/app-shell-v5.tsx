@@ -298,6 +298,21 @@ export function AppShellV5({ initialTasks, initialMembers }: Props) {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [supabase, profile?.id]);
 
+  useEffect(() => {
+    if (!supabase || !profile) return;
+    const refreshNotifications = () => {
+      void loadNotifications();
+    };
+    window.addEventListener("pscv:notifications-changed", refreshNotifications);
+    const intervalId = window.setInterval(refreshNotifications, 45000);
+
+    return () => {
+      window.removeEventListener("pscv:notifications-changed", refreshNotifications);
+      window.clearInterval(intervalId);
+    };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [supabase, profile?.id]);
+
   async function loadData(client: SupabaseBrowser, accountEmail: string) {
     setError(null);
     const normalized = accountEmail.toLowerCase();
@@ -347,7 +362,7 @@ export function AppShellV5({ initialTasks, initialMembers }: Props) {
 
   async function loadNotifications() {
     try {
-      const response = await fetch("/api/notifications", { credentials: "include" });
+      const response = await fetch("/api/notifications", { credentials: "include", cache: "no-store" });
       const body = await response.json() as { notifications?: AppNotification[]; error?: string };
       if (!response.ok) throw new Error(body.error ?? "No se pudieron cargar avisos.");
       setNotifications(body.notifications ?? []);
@@ -545,6 +560,11 @@ export function AppShellV5({ initialTasks, initialMembers }: Props) {
     }
   }
 
+  function refreshCurrentData() {
+    if (!email || !supabase) return;
+    void Promise.all([loadData(supabase, email), loadNotifications()]);
+  }
+
   return (
     <main className={`mobileApp density-${prefs.taskDensity} ${role === "admin" ? "adminShell" : ""}`}>
       <header className="topAppBar">
@@ -558,11 +578,17 @@ export function AppShellV5({ initialTasks, initialMembers }: Props) {
           )}
         </div>
         <button className="iconButton" aria-label="Buscar" title="Buscar" onClick={() => setSearchOpen((value) => !value)} type="button"><Search size={22} /></button>
-        <button className="iconButton notificationButton" aria-label="Avisos" title="Avisos" onClick={() => setNotificationOpen((value) => !value)} type="button">
+        <button
+          className={`iconButton notificationButton ${notifications.length && !unreadNotifications ? "hasNotifications" : ""}`}
+          aria-label={unreadNotifications ? `${unreadNotifications} avisos sin leer` : "Avisos"}
+          title={unreadNotifications ? `${unreadNotifications} avisos sin leer` : "Avisos"}
+          onClick={() => setNotificationOpen((value) => !value)}
+          type="button"
+        >
           <Bell size={21} />
-          {unreadNotifications ? <span>{unreadNotifications > 9 ? "9+" : unreadNotifications}</span> : null}
+          {unreadNotifications ? <span className="notificationBadge">{unreadNotifications > 9 ? "9+" : unreadNotifications}</span> : null}
         </button>
-        <button className="iconButton" aria-label="Actualizar" title="Actualizar" onClick={() => email && supabase ? void loadData(supabase, email) : undefined} type="button"><RefreshCw size={21} /></button>
+        <button className="iconButton" aria-label="Actualizar" title="Actualizar" onClick={refreshCurrentData} type="button"><RefreshCw size={21} /></button>
       </header>
 
       <Drawer
@@ -581,6 +607,7 @@ export function AppShellV5({ initialTasks, initialMembers }: Props) {
         notifications={notifications}
         onClose={() => setNotificationOpen(false)}
         onOpen={openNotification}
+        onRefresh={() => void loadNotifications()}
         onRead={(ids) => void updateNotifications(ids, "read")}
         onDismiss={(ids) => void updateNotifications(ids, "dismiss")}
       />
@@ -680,6 +707,7 @@ function NotificationTray({
   notifications,
   onClose,
   onOpen,
+  onRefresh,
   onRead,
   onDismiss,
 }: {
@@ -687,20 +715,23 @@ function NotificationTray({
   notifications: AppNotification[];
   onClose: () => void;
   onOpen: (notification: AppNotification) => void;
+  onRefresh: () => void;
   onRead: (ids: string[]) => void;
   onDismiss: (ids: string[]) => void;
 }) {
   if (!open) return null;
 
   const unreadIds = notifications.filter((notification) => !notification.read_at).map((notification) => notification.id);
+  const unreadLabel = unreadIds.length ? `${unreadIds.length} sin leer` : "todo leído";
 
   return (
     <section className="notificationTray" aria-label="Avisos">
       <div className="notificationTrayHead">
-        <div><strong>Avisos</strong><span>{notifications.length} activos</span></div>
+        <div><strong>Avisos</strong><span>{notifications.length} activos · {unreadLabel}</span></div>
         <button aria-label="Cerrar avisos" onClick={onClose} type="button"><X size={16} /></button>
       </div>
       <div className="notificationTrayActions">
+        <button type="button" onClick={onRefresh}>Actualizar</button>
         <button type="button" onClick={() => onRead(unreadIds)} disabled={!unreadIds.length}>Marcar leídos</button>
         <button type="button" onClick={() => onDismiss(notifications.map((notification) => notification.id))} disabled={!notifications.length}>Limpiar</button>
       </div>

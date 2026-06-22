@@ -38,6 +38,8 @@ export async function GET() {
       notifications: notifications.data ?? [],
       unread: (notifications.data ?? []).filter((notification) => !notification.read_at).length,
       preferences: preferences.data ?? null,
+    }, {
+      headers: { "Cache-Control": "no-store" },
     });
   } catch (error) {
     return errorResponse(error);

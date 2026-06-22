@@ -29,7 +29,9 @@ export async function GET() {
       .limit(80);
 
     if (error) throw new Error(error.message);
-    return NextResponse.json({ ok: true, notifications: data ?? [] });
+    return NextResponse.json({ ok: true, notifications: data ?? [] }, {
+      headers: { "Cache-Control": "no-store" },
+    });
   } catch (error) {
     return errorResponse(error);
   }

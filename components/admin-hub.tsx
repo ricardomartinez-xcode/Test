@@ -178,7 +178,7 @@ function NotificationsPanel({ onError }: { onError: (error: string | null) => vo
 
   async function loadRecent() {
     try {
-      const response = await fetch("/api/admin/notifications", { credentials: "include" });
+      const response = await fetch("/api/admin/notifications", { credentials: "include", cache: "no-store" });
       const payload = await response.json() as { notifications?: AdminNotification[]; error?: string };
       if (!response.ok) throw new Error(payload.error ?? "No se pudieron cargar avisos.");
       setRecent(payload.notifications ?? []);
@@ -205,6 +205,7 @@ function NotificationsPanel({ onError }: { onError: (error: string | null) => vo
       setTitle("");
       setBody("");
       await loadRecent();
+      window.dispatchEvent(new CustomEvent("pscv:notifications-changed"));
     } catch (error) {
       onError(error instanceof Error ? error.message : "No se pudo enviar el aviso.");
     } finally {
@@ -226,6 +227,7 @@ function NotificationsPanel({ onError }: { onError: (error: string | null) => vo
       if (!response.ok) throw new Error(payload.error ?? "No se pudieron generar recordatorios.");
       setResult(`${payload.inserted ?? 0} recordatorios próximos creados`);
       await loadRecent();
+      window.dispatchEvent(new CustomEvent("pscv:notifications-changed"));
     } catch (error) {
       onError(error instanceof Error ? error.message : "No se pudieron generar recordatorios.");
     } finally {

@@ -539,7 +539,7 @@ body {
   position: relative;
 }
 
-.notificationButton span {
+.notificationButton .notificationBadge {
   position: absolute;
   top: 3px;
   right: 2px;
@@ -553,6 +553,18 @@ body {
   font-size: 9px;
   font-weight: 900;
   line-height: 1;
+}
+
+.notificationButton.hasNotifications::after {
+  content: "";
+  position: absolute;
+  top: 7px;
+  right: 7px;
+  width: 7px;
+  height: 7px;
+  border: 2px solid #fff;
+  border-radius: 999px;
+  background: #2f77d0;
 }
 
 .notificationTray {
@@ -610,6 +622,7 @@ body {
 .notificationTrayActions {
   display: flex;
   gap: 7px;
+  flex-wrap: wrap;
   padding: 8px 10px;
   border-bottom: 1px solid #eef2f7;
 }
