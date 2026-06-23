@@ -57,7 +57,7 @@ type ImportResult = {
   updated?: number;
   error?: string;
 };
-type AdminNotification = { id: string; profile_id: string | null; kind: string; priority: string; title: string; body: string; read_at: string | null; dismissed_at: string | null; created_at: string };
+type AdminNotification = { id: string; profile_id: string | null; kind: string; priority: string; title: string; body: string; read_at: string | null; dismissed_at: string | null; created_at: string; recipient_count: number; read_count: number; dismissed_count: number };
 type EmailDispatchResult = { configured: boolean; considered: number; delivered: number; skipped: number; failed: number; errors: string[] };
 type ReportPayload = { ok?: boolean; tasks?: ReportRow[]; materials?: ReportRow[]; students?: ReportRow[]; audit?: ReportRow[]; error?: string };
 type ReportRow = Record<string, string | number | boolean | null>;
@@ -226,8 +226,14 @@ export function AdminHub({ courses, sections, profile = null, supabase, reload, 
   async function updateTask(id: string, patch: Partial<Pick<AdminTaskRow, "status" | "visible_to_students" | "priority">>) {
     setAdminTasks((current) => current.map((task) => task.id === id ? { ...task, ...patch } : task));
     if (!supabase) return;
-    const { error } = await supabase.from("tasks").update({ ...patch, updated_at: new Date().toISOString() }).eq("id", id);
-    if (error) onError(error.message);
+    const response = await fetch(`/api/admin/tasks/${id}`, {
+      method: "PATCH",
+      credentials: "include",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(patch),
+    });
+    const body = await response.json().catch(() => ({})) as { error?: string };
+    if (!response.ok) onError(body.error ?? "No se pudo actualizar la tarea.");
     else await reload();
   }
 
@@ -327,7 +333,7 @@ function NotificationsPanel({ onError }: { onError: (error: string | null) => vo
       });
       const payload = await response.json() as { inserted?: number; error?: string };
       if (!response.ok) throw new Error(payload.error ?? "No se pudieron generar recordatorios.");
-      setResult(`${payload.inserted ?? 0} recordatorios próximos creados`);
+      setResult(`${payload.inserted ?? 0} recordatorios de los próximos 3 días creados`);
       await loadRecent();
       window.dispatchEvent(new CustomEvent("pscv:notifications-changed"));
     } catch (error) {
@@ -340,8 +346,13 @@ function NotificationsPanel({ onError }: { onError: (error: string | null) => vo
   return (
     <section className="adminCard">
       <div className="adminCardHead">
-        <div><h3>Avisos</h3><p>Crea avisos persistentes y genera recordatorios de entregas próximas.</p></div>
-        <button type="button" onClick={() => void generateDueNotifications()} disabled={busy}>{busy ? "Procesando..." : "Generar vencimientos"}</button>
+        <div><h3>Avisos</h3><p>Crea avisos persistentes y recordatorios para tareas próximas.</p></div>
+        <button type="button" onClick={() => void generateDueNotifications()} disabled={busy}>{busy ? "Procesando..." : "Crear recordatorios (3 días)"}</button>
+      </div>
+      <div className="adminNoticeHelp">
+        <p><strong>Recordatorios:</strong> crea un aviso para cada alumno y cada tarea visible, pendiente y con vencimiento entre hoy y los próximos 3 días. No duplica un recordatorio ya creado.</p>
+        <p><strong>Nueva tarea / Tarea actualizada:</strong> son avisos automáticos dirigidos a alumnos. Por eso no aparecen en la campana del administrador. El historial inferior agrupa las filas individuales por entrega.</p>
+        <p><strong>Entrega:</strong> la campana funciona dentro de PSCV Room; navegador y sonido requieren permiso y la app abierta. El correo se envía actualmente para avisos manuales cuando el alumno lo activó.</p>
       </div>
       <form className="adminNoticeForm" onSubmit={sendNotification}>
         <label className="wide">Título<input value={title} onChange={(event) => setTitle(event.target.value)} placeholder="Aviso para el grupo" required /></label>
@@ -353,7 +364,7 @@ function NotificationsPanel({ onError }: { onError: (error: string | null) => vo
       </form>
       {result ? <p className="adminResult">{result}</p> : null}
       <div className="adminNoticeList">
-        {recent.slice(0, 8).map((notice) => <article key={notice.id}><strong>{notice.title}</strong><span>{notice.kind} · {notice.priority} · {formatDateTime(notice.created_at)}</span></article>)}
+        {recent.slice(0, 8).map((notice) => <article key={notice.id}><strong>{notice.title}</strong><span>{notice.kind} · {notice.priority} · {notice.recipient_count} destinatarios · {notice.read_count} leídos · {notice.dismissed_count} ocultos · {formatDateTime(notice.created_at)}</span></article>)}
         {!recent.length ? <p className="muted">Sin avisos recientes.</p> : null}
       </div>
     </section>

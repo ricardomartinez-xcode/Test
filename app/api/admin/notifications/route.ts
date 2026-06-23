@@ -2,6 +2,7 @@ import { NextResponse } from "next/server";
 import { z } from "zod";
 import { errorResponse, requirePermission, requireProfile } from "@/lib/server/authz";
 import { deliverAnnouncementEmails, type AnnouncementNotification } from "@/lib/server/notification-email";
+import { groupAdminNotifications, type AdminNotificationRow } from "@/lib/server/notification-groups";
 import { createSupabaseServerClient } from "@/lib/supabase/server";
 
 const notificationSchema = z.object({
@@ -25,12 +26,12 @@ export async function GET() {
 
     const { data, error } = await supabase
       .from("notifications")
-      .select("id,profile_id,kind,priority,title,body,read_at,dismissed_at,created_at")
+      .select("id,profile_id,kind,priority,title,body,entity,entity_id,read_at,dismissed_at,created_at")
       .order("created_at", { ascending: false })
-      .limit(80);
+      .limit(500);
 
     if (error) throw new Error(error.message);
-    return NextResponse.json({ ok: true, notifications: data ?? [] }, {
+    return NextResponse.json({ ok: true, notifications: groupAdminNotifications((data ?? []) as AdminNotificationRow[]) }, {
       headers: { "Cache-Control": "no-store" },
     });
   } catch (error) {

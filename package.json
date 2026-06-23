@@ -8,6 +8,7 @@
     "build": "next build",
     "smoke": "node scripts/smoke.mjs",
     "start": "next start",
+    "test": "node --experimental-strip-types --test tests/*.test.ts",
     "typecheck": "tsc -p tsconfig.json --noEmit",
     "lint": "eslint ."
   },

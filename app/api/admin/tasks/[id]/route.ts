@@ -1,5 +1,6 @@
 import { NextResponse } from "next/server";
 import { z } from "zod";
+import { syncTaskAcrossCalendarConnections } from "@/lib/server/calendar-sync";
 import { createSupabaseServerClient } from "@/lib/supabase/server";
 import { errorResponse, requirePermission, requireProfile } from "@/lib/server/authz";
 
@@ -55,7 +56,7 @@ export async function PATCH(request: Request, context: RouteContext) {
   try {
     const { id } = await context.params;
     const supabase = await createSupabaseServerClient();
-    await requireProfile(supabase);
+    const profile = await requireProfile(supabase);
     await requirePermission(supabase, "tasks:edit");
     const patch = taskPatchSchema.parse(await request.json());
 
@@ -65,7 +66,7 @@ export async function PATCH(request: Request, context: RouteContext) {
 
     const { data, error } = await supabase
       .from("tasks")
-      .update({ ...patch, updated_at: new Date().toISOString() })
+      .update({ ...patch, updated_by: profile.id, updated_at: new Date().toISOString() })
       .eq("id", id)
       .select(taskSelect())
       .single();
@@ -80,7 +81,15 @@ export async function PATCH(request: Request, context: RouteContext) {
       after_data: data,
     });
 
-    return NextResponse.json({ ok: true, task: data });
+    let calendar = null;
+    let calendarError: string | null = null;
+    try {
+      calendar = await syncTaskAcrossCalendarConnections(id);
+    } catch (syncError) {
+      calendarError = syncError instanceof Error ? syncError.message : "No se pudo sincronizar el calendario.";
+    }
+
+    return NextResponse.json({ ok: true, task: data, calendar, calendarError });
   } catch (error) {
     return errorResponse(error);
   }
@@ -90,7 +99,7 @@ export async function DELETE(_request: Request, context: RouteContext) {
   try {
     const { id } = await context.params;
     const supabase = await createSupabaseServerClient();
-    await requireProfile(supabase);
+    const profile = await requireProfile(supabase);
     await requirePermission(supabase, "tasks:delete");
 
     const before = await supabase.from("tasks").select("*").eq("id", id).maybeSingle();
@@ -99,7 +108,7 @@ export async function DELETE(_request: Request, context: RouteContext) {
 
     const { data, error } = await supabase
       .from("tasks")
-      .update({ archived_at: new Date().toISOString(), updated_at: new Date().toISOString() })
+      .update({ archived_at: new Date().toISOString(), updated_by: profile.id, updated_at: new Date().toISOString() })
       .eq("id", id)
       .select("id,archived_at")
       .single();
@@ -114,7 +123,15 @@ export async function DELETE(_request: Request, context: RouteContext) {
       after_data: data,
     });
 
-    return NextResponse.json({ ok: true, task: data });
+    let calendar = null;
+    let calendarError: string | null = null;
+    try {
+      calendar = await syncTaskAcrossCalendarConnections(id);
+    } catch (syncError) {
+      calendarError = syncError instanceof Error ? syncError.message : "No se pudo sincronizar el calendario.";
+    }
+
+    return NextResponse.json({ ok: true, task: data, calendar, calendarError });
   } catch (error) {
     return errorResponse(error);
   }

@@ -1,13 +1,12 @@
 # PSCV Room Operations Runbook
 
-Fecha: 2026-06-18
+Fecha: 2026-06-23
 
 ## Ambientes
 
 - Produccion: `https://app.rlead.xyz`
 - Vercel project: `relead/pscvroom`
-- Rama de trabajo actual: `codex/production-phases`
-- Preview estable de la fase: `https://pscvroom-git-codex-production-phases-relead.vercel.app`
+- Rama de producción: `main`
 - Supabase project ref: `luygjtmggthhxzxlfkbq`
 - R2 bucket: `psicologia`
 - R2 S3 API: `https://41ffa6a1a7c184fd4308f87780a62cc4.r2.cloudflarestorage.com/psicologia`
@@ -20,7 +19,7 @@ Fecha: 2026-06-18
 2. Empujar la rama:
 
 ```bash
-git push origin codex/production-phases
+git push origin main
 ```
 
 3. Confirmar que Vercel termina en `Ready`:
@@ -67,6 +66,15 @@ Variables presentes solo en Production:
 - `POSTGRES_HOST`
 - `POSTGRES_PASSWORD`
 - `POSTGRES_DATABASE`
+- `CALENDAR_TOKEN_ENCRYPTION_KEY`
+
+Variables requeridas para renovar acceso delegado a Microsoft Calendar:
+
+- `MICROSOFT_OAUTH_CLIENT_ID`
+- `MICROSOFT_OAUTH_CLIENT_SECRET`
+- `MICROSOFT_OAUTH_TENANT_ID` (`common` o el tenant institucional)
+
+`MICROSOFT_OAUTH_CLIENT_ID` y `MICROSOFT_OAUTH_CLIENT_SECRET` deben corresponder a la misma aplicación Azure configurada como proveedor Azure en Supabase Auth. Sin ellas, la primera sincronización funciona con el token entregado al iniciar sesión, pero al expirar Microsoft solicitará reconectar.
 
 Si se quiere probar login, datos reales y diagnostico Supabase en previews de rama, copiar las variables `NEXT_PUBLIC_SUPABASE_*` y las variables Supabase necesarias tambien a Preview. `DATABASE_URL` no esta listado; las rutas principales usan Supabase, pero la ruta legacy `/api/tasks` lo requiere si se usa Postgres directo.
 
@@ -103,6 +111,10 @@ Migraciones aplicadas o requeridas por esta fase:
 - `db/005_tighten_authenticated_grants.sql`
 - `db/006_restore_public_material_read_grants.sql`
 - `db/007_task_change_notifications.sql`
+- `db/008_fix_permission_email_fallback.sql`
+- `db/009_academic_management.sql`
+- `db/010_owner_only_profile_permissions.sql`
+- `db/011_microsoft_calendar_sync.sql`
 
 La seccion `Preferencias` guarda preferencias por usuario en `app_profiles.preferences`; el admin no controla la vista global de todos. La lista de grupo usa:
 
@@ -115,6 +127,7 @@ La operacion actual tambien usa:
 - `notifications`
 - `audit_log`
 - vistas `report_task_summary`, `report_material_summary`, `report_student_followup`
+- `microsoft_calendar_connections` y `task_calendar_events`, sin permisos para `anon` ni `authenticated`
 
 Permisos admin por perfil:
 
@@ -128,6 +141,8 @@ Permisos admin por perfil:
 Antes de empujar cambios grandes:
 
 ```bash
+npm test
+npm run lint
 npm run build
 npm run typecheck
 ```

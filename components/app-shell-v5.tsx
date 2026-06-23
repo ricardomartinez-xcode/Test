@@ -74,6 +74,15 @@ type Profile = {
   canManageR2: boolean;
 };
 
+type CalendarConnectionStatus = {
+  connected: boolean;
+  connectedAt: string | null;
+  lastSyncAt: string | null;
+  lastError: string | null;
+  reconnectRequired: boolean;
+  refreshConfigured: boolean;
+};
+
 type UiTask = Task & {
   courseId?: string;
   taskTypeId?: string;
@@ -495,38 +504,42 @@ export function AppShellV5({ initialTasks, initialMembers }: Props) {
       return;
     }
 
-    const { data, error: insertError } = await supabase
-      .from("tasks")
-      .insert({
-        title,
-        course_id: form.courseId || null,
-        task_type_id: form.typeId || null,
-        due_date: form.dueDate,
-        due_time: form.dueTime || "23:59",
-        status: form.status,
-        priority: form.priority,
-        visible_to_students: form.visible,
-        material_url: form.materialUrl.trim() || null,
-        platform_url: form.platformUrl.trim() || null,
-        notes: form.notes.trim() || null,
-        material_needed: form.materialNeeded.trim() || null,
-      })
-      .select("id")
-      .single();
-
-    if (insertError) {
-      setError(insertError.message);
-    } else {
+    try {
+      const response = await fetch("/api/admin/tasks", {
+        method: "POST",
+        credentials: "include",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          title,
+          course_id: form.courseId || null,
+          task_type_id: form.typeId || null,
+          due_date: form.dueDate,
+          due_time: form.dueTime || "23:59",
+          status: form.status,
+          priority: form.priority,
+          visible_to_students: form.visible,
+          material_url: form.materialUrl.trim() || null,
+          platform_url: form.platformUrl.trim() || null,
+          notes: form.notes.trim() || null,
+          material_needed: form.materialNeeded.trim() || null,
+        }),
+      });
+      const body = await response.json().catch(() => ({})) as { task?: { id: string }; error?: string; calendarError?: string | null };
+      if (!response.ok || !body.task) throw new Error(body.error ?? "No se pudo crear la tarea.");
+      const taskId = String(body.task.id);
       if (form.materialId) {
         try {
-          await linkTaskMaterial(String(data.id), form.materialId);
+          await linkTaskMaterial(taskId, form.materialId);
         } catch (linkError) {
           setError(linkError instanceof Error ? linkError.message : "No se pudo enlazar el material.");
         }
       }
       if (email) await loadData(supabase, email);
-      setSelectedTaskId(String(data.id));
+      setSelectedTaskId(taskId);
       setTaskFormOpen(false);
+      if (body.calendarError) setError(`Tarea creada; calendario pendiente: ${body.calendarError}`);
+    } catch (createError) {
+      setError(createError instanceof Error ? createError.message : "No se pudo crear la tarea.");
     }
 
     setCreatingTask(false);
@@ -598,10 +611,11 @@ export function AppShellV5({ initialTasks, initialMembers }: Props) {
           notes: form.notes.trim() || null,
         }),
       });
-      const body = await response.json().catch(() => ({})) as { error?: string };
+      const body = await response.json().catch(() => ({})) as { error?: string; calendarError?: string | null };
       if (!response.ok) throw new Error(body.error ?? "No se pudo guardar la tarea.");
       if (form.materialId) await linkTaskMaterial(id, form.materialId);
       if (email) await loadData(supabase, email);
+      if (body.calendarError) setError(`Tarea guardada; calendario pendiente: ${body.calendarError}`);
       return true;
     } catch (saveError) {
       setError(saveError instanceof Error ? saveError.message : "No se pudo guardar la tarea.");
@@ -611,13 +625,18 @@ export function AppShellV5({ initialTasks, initialMembers }: Props) {
 
   async function markDone(id: string) {
     if (!supabase || !canEditTasks) return;
-    const { error: updateError } = await supabase
-      .from("tasks")
-      .update({ status: "Entregado", visible_to_students: false, updated_at: new Date().toISOString() })
-      .eq("id", id);
-
-    if (updateError) setError(updateError.message);
-    else if (email) await loadData(supabase, email);
+    const response = await fetch(`/api/admin/tasks/${id}`, {
+      method: "PATCH",
+      credentials: "include",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ status: "Entregado", visible_to_students: false }),
+    });
+    const body = await response.json().catch(() => ({})) as { error?: string; calendarError?: string | null };
+    if (!response.ok) setError(body.error ?? "No se pudo marcar como entregada.");
+    else {
+      if (email) await loadData(supabase, email);
+      if (body.calendarError) setError(`Tarea entregada; calendario pendiente: ${body.calendarError}`);
+    }
   }
 
   if (!ready) {
@@ -1683,7 +1702,117 @@ function Preferences({ profile, supabase, onProfile, onError }: { profile: Profi
           <label className="checkSetting"><input type="checkbox" checked={prefs.showCompleted} onChange={(event) => void update("showCompleted", event.target.checked)} /> Guardar entregadas en mi perfil</label>
         </div>
       </section>
+      {profile?.role === "student" && supabase ? <CalendarConnectionSettings supabase={supabase} /> : null}
     </div>
+  );
+}
+
+function CalendarConnectionSettings({ supabase }: { supabase: SupabaseBrowser }) {
+  const [status, setStatus] = useState<CalendarConnectionStatus | null>(null);
+  const [busy, setBusy] = useState(false);
+  const [message, setMessage] = useState<string | null>(null);
+
+  const loadStatus = useCallback(async () => {
+    try {
+      const response = await fetch("/api/calendar", { credentials: "include", cache: "no-store" });
+      const body = await response.json().catch(() => ({})) as { status?: CalendarConnectionStatus; error?: string };
+      if (!response.ok || !body.status) throw new Error(body.error ?? "No se pudo consultar Outlook.");
+      setStatus(body.status);
+    } catch (error) {
+      setMessage(error instanceof Error ? error.message : "No se pudo consultar Outlook.");
+    }
+  }, []);
+
+  useEffect(() => {
+    void loadStatus();
+  }, [loadStatus]);
+
+  async function connect() {
+    setBusy(true);
+    setMessage(null);
+    const { error } = await supabase.auth.signInWithOAuth({
+      provider: "azure",
+      options: {
+        redirectTo: `${window.location.origin}/auth/callback?next=/`,
+        scopes: "openid email profile offline_access Calendars.ReadWrite",
+        queryParams: { prompt: "consent" },
+      },
+    });
+    if (error) {
+      setBusy(false);
+      setMessage(error.message);
+    }
+  }
+
+  async function sync() {
+    setBusy(true);
+    setMessage(null);
+    try {
+      const response = await fetch("/api/calendar", { method: "POST", credentials: "include" });
+      const body = await response.json().catch(() => ({})) as { summary?: { created: number; updated: number; deleted: number; failed: number }; error?: string };
+      if (!response.ok || !body.summary) throw new Error(body.error ?? "No se pudo sincronizar Outlook.");
+      const summary = body.summary;
+      setMessage(`${summary.created} creados · ${summary.updated} actualizados · ${summary.deleted} eliminados${summary.failed ? ` · ${summary.failed} fallidos` : ""}`);
+      await loadStatus();
+    } catch (error) {
+      setMessage(error instanceof Error ? error.message : "No se pudo sincronizar Outlook.");
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  async function disconnect() {
+    setBusy(true);
+    setMessage(null);
+    try {
+      const response = await fetch("/api/calendar", { method: "DELETE", credentials: "include" });
+      const body = await response.json().catch(() => ({})) as { error?: string };
+      if (!response.ok) throw new Error(body.error ?? "No se pudo desconectar Outlook.");
+      setMessage("Calendario de Outlook desconectado.");
+      await loadStatus();
+    } catch (error) {
+      setMessage(error instanceof Error ? error.message : "No se pudo desconectar Outlook.");
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  const connected = Boolean(status?.connected);
+  const needsReconnect = Boolean(status?.reconnectRequired);
+
+  return (
+    <section className="settingsCard calendarIntegration">
+      <div className="calendarIntegrationHead">
+        <div>
+          <p className="eyebrow">Microsoft 365</p>
+          <h3>Calendario de Outlook</h3>
+        </div>
+        <span className={connected && !needsReconnect ? "connected" : "disconnected"}>
+          {connected && !needsReconnect ? "Conectado" : needsReconnect ? "Reconexión necesaria" : "No conectado"}
+        </span>
+      </div>
+      <p>Las tareas visibles se crean como eventos personales y se actualizan cuando cambia su fecha, hora o contenido.</p>
+      {status?.lastSyncAt ? <small>Última sincronización: {formatOptionalSync(status.lastSyncAt)}</small> : null}
+      {status && !status.refreshConfigured ? <p className="calendarIntegrationWarning">La renovación automática está pendiente de configurar en el servidor. Microsoft puede solicitar reconectar cuando expire el acceso actual.</p> : null}
+      {status?.lastError ? <p className="calendarIntegrationError">{status.lastError}</p> : null}
+      <div className="calendarIntegrationActions">
+        {!connected || needsReconnect ? (
+          <button type="button" onClick={() => void connect()} disabled={busy} title="Conectar calendario de Outlook">
+            <CalendarDays size={17} />{busy ? "Conectando..." : "Conectar Microsoft"}
+          </button>
+        ) : (
+          <>
+            <button type="button" onClick={() => void sync()} disabled={busy} title="Sincronizar calendario ahora">
+              <RefreshCw size={17} />{busy ? "Sincronizando..." : "Sincronizar ahora"}
+            </button>
+            <button type="button" onClick={() => void disconnect()} disabled={busy} title="Desconectar calendario de Outlook">
+              <Trash2 size={17} />Desconectar
+            </button>
+          </>
+        )}
+      </div>
+      {message ? <p className="calendarIntegrationMessage">{message}</p> : null}
+    </section>
   );
 }
 
