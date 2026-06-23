@@ -14,7 +14,7 @@ El botón se llamará `Crear recordatorios (3 días)` y explicará que crea un r
 
 ## Calendario
 
-El login Azure solicitará `Calendars.ReadWrite` y `offline_access`, además de los alcances actuales. En el callback:
+El login Azure inicial conserva los alcances básicos. Cuando la app reconoce un perfil `student` sin conexión, inicia una sola vez el consentimiento adicional `Calendars.ReadWrite offline_access`; admin y owner no reciben esa solicitud. En el callback del consentimiento:
 
 1. Supabase intercambia el código OAuth y establece la sesión.
 2. Para perfiles `student`, el servidor cifra y guarda `provider_token` y `provider_refresh_token`.
@@ -45,4 +45,3 @@ La interfaz no expone tokens.
 - `npm run build`.
 - Migración aplicada en producción.
 - Push a `origin/main` y despliegue Vercel en estado `READY`.
-

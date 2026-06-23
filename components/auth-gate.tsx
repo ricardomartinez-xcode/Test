@@ -53,7 +53,7 @@ export function AuthGate({ children }: AuthGateProps) {
       provider: "azure",
       options: {
         redirectTo: `${window.location.origin}/auth/callback`,
-        scopes: "openid email profile offline_access Calendars.ReadWrite",
+        scopes: "openid email profile",
         queryParams: {
           prompt: "select_account",
         },

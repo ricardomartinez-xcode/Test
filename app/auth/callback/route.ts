@@ -8,6 +8,7 @@ export async function GET(request: Request) {
   const code = requestUrl.searchParams.get("code");
   const requestedNext = requestUrl.searchParams.get("next") || "/";
   const next = requestedNext.startsWith("/") && !requestedNext.startsWith("//") ? requestedNext : "/";
+  const calendarConsent = requestUrl.searchParams.get("calendar") === "connect";
   let calendarStatus: "connected" | "error" | null = null;
 
   if (code) {
@@ -16,7 +17,7 @@ export async function GET(request: Request) {
     if (!error && data.session) {
       try {
         const profile = await requireProfile(supabase);
-        if (profile.role === "student") {
+        if (profile.role === "student" && calendarConsent) {
           const stored = await storeMicrosoftCalendarConnection(profile.id, data.session);
           if (stored) {
             const summary = await syncProfileCalendar(profile.id);

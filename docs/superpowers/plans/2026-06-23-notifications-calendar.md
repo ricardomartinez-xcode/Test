@@ -37,7 +37,7 @@
 
 - [ ] Añadir tablas privadas de conexiones y enlaces tarea/evento.
 - [ ] Añadir cliente service-role lazy.
-- [ ] Solicitar `Calendars.ReadWrite offline_access`.
+- [ ] Solicitar `Calendars.ReadWrite offline_access` solo después de reconocer un perfil alumno.
 - [ ] Guardar tokens cifrados y sincronizar tareas activas durante el callback.
 - [ ] Verificar TypeScript con `npm run build`.
 
@@ -79,4 +79,3 @@
 - [ ] Configurar secretos disponibles en Vercel.
 - [ ] Ejecutar `npm test`, `npm run lint` y `npm run build`.
 - [ ] Commit, push a `origin/main`, esperar Vercel `READY` y verificar endpoints públicos no autenticados.
-

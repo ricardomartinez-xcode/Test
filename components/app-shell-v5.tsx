@@ -348,6 +348,35 @@ export function AppShellV5({ initialTasks, initialMembers }: Props) {
   }, [supabase, profile?.id]);
 
   useEffect(() => {
+    if (!supabase || profile?.role !== "student") return;
+    const attemptKey = `pscv:calendar-consent-attempted:${profile.id}`;
+    if (window.sessionStorage.getItem(attemptKey)) return;
+
+    let cancelled = false;
+    void fetch("/api/calendar", { credentials: "include", cache: "no-store" })
+      .then(async (response) => {
+        const body = await response.json().catch(() => ({})) as { status?: CalendarConnectionStatus };
+        if (cancelled || !response.ok || body.status?.connected) return;
+        window.sessionStorage.setItem(attemptKey, "true");
+        await supabase.auth.signInWithOAuth({
+          provider: "azure",
+          options: {
+            redirectTo: `${window.location.origin}/auth/callback?calendar=connect&next=/`,
+            scopes: "openid email profile offline_access Calendars.ReadWrite",
+            queryParams: { prompt: "consent" },
+          },
+        });
+      })
+      .catch(() => {
+        // The manual connection button remains available in Preferences.
+      });
+
+    return () => {
+      cancelled = true;
+    };
+  }, [profile?.id, profile?.role, supabase]);
+
+  useEffect(() => {
     if (!supabase || !profile) return;
     const refreshNotifications = () => {
       void loadNotifications();
@@ -1733,7 +1762,7 @@ function CalendarConnectionSettings({ supabase }: { supabase: SupabaseBrowser })
     const { error } = await supabase.auth.signInWithOAuth({
       provider: "azure",
       options: {
-        redirectTo: `${window.location.origin}/auth/callback?next=/`,
+        redirectTo: `${window.location.origin}/auth/callback?calendar=connect&next=/`,
         scopes: "openid email profile offline_access Calendars.ReadWrite",
         queryParams: { prompt: "consent" },
       },
