@@ -1,5 +1,5 @@
 import { NextResponse } from "next/server";
-import { MATERIALS_R2_ROOT, normalizeMaterialR2Key } from "@/lib/server/r2-paths";
+import { isGeneratedR2FolderPath, MATERIALS_R2_ROOT, normalizeMaterialR2Key } from "@/lib/server/r2-paths";
 import { hasR2Config, listR2FolderPrefixes } from "@/lib/server/r2";
 import { createSupabaseServerClient } from "@/lib/supabase/server";
 
@@ -24,10 +24,6 @@ function labelFromPath(path: string) {
 
 function destinationKey(path: string) {
   return normalizeMaterialR2Key(path).toLowerCase();
-}
-
-function isGeneratedUploadFolder(path: string) {
-  return path.split("/").some((segment) => /^(19|20)\d{2}$/.test(segment.trim()));
 }
 
 export async function GET() {
@@ -58,7 +54,7 @@ export async function GET() {
       const folders = await listR2FolderPrefixes({ root: MATERIALS_R2_ROOT });
       for (const folder of folders) {
         const path = normalizeMaterialR2Key(folder);
-        if (!path || isGeneratedUploadFolder(path)) continue;
+        if (!path || isGeneratedR2FolderPath(path)) continue;
         const key = destinationKey(path);
         const section = sectionsByPath.get(key);
         destinations.set(key, {

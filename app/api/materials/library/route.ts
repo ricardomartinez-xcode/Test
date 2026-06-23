@@ -1,5 +1,7 @@
 import { NextResponse } from "next/server";
-import { createPublicR2Url } from "@/lib/server/r2";
+import { selectBucketMaterialSections } from "@/lib/server/material-sections";
+import { createPublicR2Url, listR2FolderPrefixes } from "@/lib/server/r2";
+import { MATERIALS_R2_ROOT, materialSectionPathFromR2Key, normalizeMaterialR2Key } from "@/lib/server/r2-paths";
 import { createSupabaseServerClient } from "@/lib/supabase/server";
 
 type SectionRow = {
@@ -34,10 +36,17 @@ function firstSection(value: MaterialRow["material_sections"]): SectionRow | nul
   return value ?? null;
 }
 
-function withR2Urls(row: MaterialRow) {
+function sectionKey(value: string) {
+  return normalizeMaterialR2Key(value).toLocaleLowerCase("es");
+}
+
+function withR2Urls(row: MaterialRow, sectionsByPath: Map<string, SectionRow>) {
   const publicR2Url = createPublicR2Url(row.r2_key);
   const signedPreviewUrl = row.r2_key ? `/api/materials/${row.id}/file?mode=preview` : null;
   const signedDownloadUrl = row.r2_key ? `/api/materials/${row.id}/file?mode=download` : null;
+  const joinedSection = firstSection(row.material_sections);
+  const sectionPath = materialSectionPathFromR2Key(row.r2_key) || joinedSection?.path || "";
+  const section = sectionsByPath.get(sectionKey(sectionPath)) ?? null;
 
   return {
     ...row,
@@ -46,7 +55,8 @@ function withR2Urls(row: MaterialRow) {
     preview_url: signedPreviewUrl ?? publicR2Url,
     source_url: signedDownloadUrl ?? publicR2Url,
     thumbnail_url: null,
-    section: firstSection(row.material_sections),
+    section_id: section?.id ?? null,
+    section,
     material_sections: undefined,
   };
 }
@@ -60,11 +70,14 @@ export async function GET(request: Request) {
 
     const supabase = await createSupabaseServerClient();
 
-    const sectionsResult = await supabase
-      .from("material_sections")
-      .select("id,name,path,color,icon,card_size,preview_style,sort_order")
-      .eq("active", true)
-      .order("sort_order", { ascending: true });
+    const [sectionsResult, folderPaths] = await Promise.all([
+      supabase
+        .from("material_sections")
+        .select("id,name,path,color,icon,card_size,preview_style,sort_order")
+        .eq("active", true)
+        .order("sort_order", { ascending: true }),
+      listR2FolderPrefixes({ root: MATERIALS_R2_ROOT }),
+    ]);
 
     let materialsQuery = supabase
       .from("materials")
@@ -97,8 +110,10 @@ export async function GET(request: Request) {
       return NextResponse.json({ error: materialsResult.error.message }, { status: 500 });
     }
 
-    const sections = (sectionsResult.data ?? []) as SectionRow[];
-    const materials = ((materialsResult.data ?? []) as MaterialRow[]).map(withR2Urls);
+    const sections = selectBucketMaterialSections(folderPaths, (sectionsResult.data ?? []) as SectionRow[]);
+    const sectionsByPath = new Map(sections.map((section) => [sectionKey(section.path), section]));
+    const materials = ((materialsResult.data ?? []) as MaterialRow[])
+      .map((row) => withR2Urls(row, sectionsByPath));
 
     const countsBySection = materials.reduce<Record<string, number>>((obj, material) => {
       if (!material.section_id) return obj;

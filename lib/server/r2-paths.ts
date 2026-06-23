@@ -17,6 +17,7 @@ export const DEFAULT_R2_FOLDER_DESTINATIONS = [
 ];
 
 const LEGACY_BUCKET_ROOT = "psicologia";
+const GENERATED_UPLOAD_FOLDER_RE = /^(19|20)\d{2}$/;
 
 const KNOWN_SEGMENTS: Record<string, string> = {
   psicologia: "psicologia",
@@ -90,6 +91,19 @@ export function normalizeMaterialR2Key(value: string | null | undefined) {
   }
 
   return cleanPath(normalizedParts.join("/"));
+}
+
+export function isGeneratedR2FolderPath(value: string | null | undefined) {
+  return normalizeMaterialR2Key(value)
+    .split("/")
+    .some((segment) => GENERATED_UPLOAD_FOLDER_RE.test(segment.trim()));
+}
+
+export function materialSectionPathFromR2Key(value: string | null | undefined) {
+  const parts = normalizeMaterialR2Key(value).split("/").filter(Boolean);
+  if (parts.at(-1)?.match(/\.[a-z0-9]{2,8}$/i)) parts.pop();
+  while (parts.length && GENERATED_UPLOAD_FOLDER_RE.test(parts.at(-1) ?? "")) parts.pop();
+  return parts.join("/");
 }
 
 function stripKnownRoot(value: string) {

@@ -1,6 +1,6 @@
 import { NextResponse } from "next/server";
 import { createPublicR2Url, getR2BucketName, listR2Objects, type R2ListedObject } from "@/lib/server/r2";
-import { MATERIALS_R2_ROOT } from "@/lib/server/r2-paths";
+import { MATERIALS_R2_ROOT, materialSectionPathFromR2Key } from "@/lib/server/r2-paths";
 import { createSupabaseServerClient } from "@/lib/supabase/server";
 import { errorResponse, requirePermission, requireProfile } from "@/lib/server/authz";
 
@@ -24,12 +24,6 @@ function cleanPath(value: string) {
 
 function basename(path: string) {
   return path.split("/").filter(Boolean).pop() ?? path;
-}
-
-function dirname(path: string) {
-  const parts = path.split("/").filter(Boolean);
-  parts.pop();
-  return parts.join("/");
 }
 
 function slugify(value: string) {
@@ -82,7 +76,7 @@ function toImportable(object: R2ListedObject): ImportableObject {
   return {
     ...object,
     fileName,
-    sectionPath: dirname(object.key) || MATERIALS_R2_ROOT,
+    sectionPath: materialSectionPathFromR2Key(object.key) || MATERIALS_R2_ROOT,
     title: titleFromFileName(fileName),
     contentType: inferContentType(fileName),
     materialType: inferMaterialType(fileName),

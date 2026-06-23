@@ -115,6 +115,7 @@ Migraciones aplicadas o requeridas por esta fase:
 - `db/009_academic_management.sql`
 - `db/010_owner_only_profile_permissions.sql`
 - `db/011_microsoft_calendar_sync.sql`
+- `db/012_normalize_material_sections.sql`
 
 La seccion `Preferencias` guarda preferencias por usuario en `app_profiles.preferences`; el admin no controla la vista global de todos. La lista de grupo usa:
 
