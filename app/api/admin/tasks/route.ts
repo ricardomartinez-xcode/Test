@@ -1,7 +1,6 @@
 import { NextResponse } from "next/server";
 import { z } from "zod";
 import { errorResponse, requirePermission, requireProfile } from "@/lib/server/authz";
-import { syncTaskAcrossCalendarConnections } from "@/lib/server/calendar-sync";
 import { createSupabaseServerClient } from "@/lib/supabase/server";
 
 const taskCreateSchema = z.object({
@@ -37,17 +36,8 @@ export async function POST(request: Request) {
       .single();
     if (error) return NextResponse.json({ error: error.message }, { status: 500 });
 
-    let calendar = null;
-    let calendarError: string | null = null;
-    try {
-      calendar = await syncTaskAcrossCalendarConnections(String(data.id));
-    } catch (syncError) {
-      calendarError = syncError instanceof Error ? syncError.message : "No se pudo sincronizar el calendario.";
-    }
-
-    return NextResponse.json({ ok: true, task: data, calendar, calendarError });
+    return NextResponse.json({ ok: true, task: data });
   } catch (error) {
     return errorResponse(error);
   }
 }
-

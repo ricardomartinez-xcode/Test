@@ -1,5 +1,7 @@
 # Avisos y calendario Microsoft: diseño
 
+> Integración de calendario retirada el 23 de junio de 2026. Microsoft se conserva únicamente como proveedor de identidad con `openid email profile`.
+
 ## Objetivo
 
 1. Evitar que el historial administrativo de avisos muestre una fila idéntica por alumno.

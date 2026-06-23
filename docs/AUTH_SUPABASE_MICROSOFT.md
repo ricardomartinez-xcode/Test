@@ -2,6 +2,9 @@
 
 La app usa Supabase Auth con proveedor Azure/Microsoft.
 
+Microsoft se usa únicamente para autenticar la identidad. El código solicita los alcances
+`openid email profile`; no solicita acceso al calendario, correo ni otros datos de Microsoft Graph.
+
 ## Variables en Vercel
 
 ```env

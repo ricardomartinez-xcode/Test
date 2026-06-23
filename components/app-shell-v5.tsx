@@ -74,15 +74,6 @@ type Profile = {
   canManageR2: boolean;
 };
 
-type CalendarConnectionStatus = {
-  connected: boolean;
-  connectedAt: string | null;
-  lastSyncAt: string | null;
-  lastError: string | null;
-  reconnectRequired: boolean;
-  refreshConfigured: boolean;
-};
-
 type UiTask = Task & {
   courseId?: string;
   taskTypeId?: string;
@@ -346,35 +337,6 @@ export function AppShellV5({ initialTasks, initialMembers }: Props) {
     if (!supabase) setNotifications([]);
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [supabase, profile?.id]);
-
-  useEffect(() => {
-    if (!supabase || profile?.role !== "student") return;
-    const attemptKey = `pscv:calendar-consent-attempted:${profile.id}`;
-    if (window.sessionStorage.getItem(attemptKey)) return;
-
-    let cancelled = false;
-    void fetch("/api/calendar", { credentials: "include", cache: "no-store" })
-      .then(async (response) => {
-        const body = await response.json().catch(() => ({})) as { status?: CalendarConnectionStatus };
-        if (cancelled || !response.ok || body.status?.connected) return;
-        window.sessionStorage.setItem(attemptKey, "true");
-        await supabase.auth.signInWithOAuth({
-          provider: "azure",
-          options: {
-            redirectTo: `${window.location.origin}/auth/callback?calendar=connect&next=/`,
-            scopes: "openid email profile offline_access Calendars.ReadWrite",
-            queryParams: { prompt: "consent" },
-          },
-        });
-      })
-      .catch(() => {
-        // The manual connection button remains available in Preferences.
-      });
-
-    return () => {
-      cancelled = true;
-    };
-  }, [profile?.id, profile?.role, supabase]);
 
   useEffect(() => {
     if (!supabase || !profile) return;
@@ -1731,117 +1693,7 @@ function Preferences({ profile, supabase, onProfile, onError }: { profile: Profi
           <label className="checkSetting"><input type="checkbox" checked={prefs.showCompleted} onChange={(event) => void update("showCompleted", event.target.checked)} /> Guardar entregadas en mi perfil</label>
         </div>
       </section>
-      {profile?.role === "student" && supabase ? <CalendarConnectionSettings supabase={supabase} /> : null}
     </div>
-  );
-}
-
-function CalendarConnectionSettings({ supabase }: { supabase: SupabaseBrowser }) {
-  const [status, setStatus] = useState<CalendarConnectionStatus | null>(null);
-  const [busy, setBusy] = useState(false);
-  const [message, setMessage] = useState<string | null>(null);
-
-  const loadStatus = useCallback(async () => {
-    try {
-      const response = await fetch("/api/calendar", { credentials: "include", cache: "no-store" });
-      const body = await response.json().catch(() => ({})) as { status?: CalendarConnectionStatus; error?: string };
-      if (!response.ok || !body.status) throw new Error(body.error ?? "No se pudo consultar Outlook.");
-      setStatus(body.status);
-    } catch (error) {
-      setMessage(error instanceof Error ? error.message : "No se pudo consultar Outlook.");
-    }
-  }, []);
-
-  useEffect(() => {
-    void loadStatus();
-  }, [loadStatus]);
-
-  async function connect() {
-    setBusy(true);
-    setMessage(null);
-    const { error } = await supabase.auth.signInWithOAuth({
-      provider: "azure",
-      options: {
-        redirectTo: `${window.location.origin}/auth/callback?calendar=connect&next=/`,
-        scopes: "openid email profile offline_access Calendars.ReadWrite",
-        queryParams: { prompt: "consent" },
-      },
-    });
-    if (error) {
-      setBusy(false);
-      setMessage(error.message);
-    }
-  }
-
-  async function sync() {
-    setBusy(true);
-    setMessage(null);
-    try {
-      const response = await fetch("/api/calendar", { method: "POST", credentials: "include" });
-      const body = await response.json().catch(() => ({})) as { summary?: { created: number; updated: number; deleted: number; failed: number }; error?: string };
-      if (!response.ok || !body.summary) throw new Error(body.error ?? "No se pudo sincronizar Outlook.");
-      const summary = body.summary;
-      setMessage(`${summary.created} creados · ${summary.updated} actualizados · ${summary.deleted} eliminados${summary.failed ? ` · ${summary.failed} fallidos` : ""}`);
-      await loadStatus();
-    } catch (error) {
-      setMessage(error instanceof Error ? error.message : "No se pudo sincronizar Outlook.");
-    } finally {
-      setBusy(false);
-    }
-  }
-
-  async function disconnect() {
-    setBusy(true);
-    setMessage(null);
-    try {
-      const response = await fetch("/api/calendar", { method: "DELETE", credentials: "include" });
-      const body = await response.json().catch(() => ({})) as { error?: string };
-      if (!response.ok) throw new Error(body.error ?? "No se pudo desconectar Outlook.");
-      setMessage("Calendario de Outlook desconectado.");
-      await loadStatus();
-    } catch (error) {
-      setMessage(error instanceof Error ? error.message : "No se pudo desconectar Outlook.");
-    } finally {
-      setBusy(false);
-    }
-  }
-
-  const connected = Boolean(status?.connected);
-  const needsReconnect = Boolean(status?.reconnectRequired);
-
-  return (
-    <section className="settingsCard calendarIntegration">
-      <div className="calendarIntegrationHead">
-        <div>
-          <p className="eyebrow">Microsoft 365</p>
-          <h3>Calendario de Outlook</h3>
-        </div>
-        <span className={connected && !needsReconnect ? "connected" : "disconnected"}>
-          {connected && !needsReconnect ? "Conectado" : needsReconnect ? "Reconexión necesaria" : "No conectado"}
-        </span>
-      </div>
-      <p>Las tareas visibles se crean como eventos personales y se actualizan cuando cambia su fecha, hora o contenido.</p>
-      {status?.lastSyncAt ? <small>Última sincronización: {formatOptionalSync(status.lastSyncAt)}</small> : null}
-      {status && !status.refreshConfigured ? <p className="calendarIntegrationWarning">La renovación automática está pendiente de configurar en el servidor. Microsoft puede solicitar reconectar cuando expire el acceso actual.</p> : null}
-      {status?.lastError ? <p className="calendarIntegrationError">{status.lastError}</p> : null}
-      <div className="calendarIntegrationActions">
-        {!connected || needsReconnect ? (
-          <button type="button" onClick={() => void connect()} disabled={busy} title="Conectar calendario de Outlook">
-            <CalendarDays size={17} />{busy ? "Conectando..." : "Conectar Microsoft"}
-          </button>
-        ) : (
-          <>
-            <button type="button" onClick={() => void sync()} disabled={busy} title="Sincronizar calendario ahora">
-              <RefreshCw size={17} />{busy ? "Sincronizando..." : "Sincronizar ahora"}
-            </button>
-            <button type="button" onClick={() => void disconnect()} disabled={busy} title="Desconectar calendario de Outlook">
-              <Trash2 size={17} />Desconectar
-            </button>
-          </>
-        )}
-      </div>
-      {message ? <p className="calendarIntegrationMessage">{message}</p> : null}
-    </section>
   );
 }
 

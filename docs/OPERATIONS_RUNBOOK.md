@@ -66,16 +66,6 @@ Variables presentes solo en Production:
 - `POSTGRES_HOST`
 - `POSTGRES_PASSWORD`
 - `POSTGRES_DATABASE`
-- `CALENDAR_TOKEN_ENCRYPTION_KEY`
-
-Variables requeridas para renovar acceso delegado a Microsoft Calendar:
-
-- `MICROSOFT_OAUTH_CLIENT_ID`
-- `MICROSOFT_OAUTH_CLIENT_SECRET`
-- `MICROSOFT_OAUTH_TENANT_ID` (`common` o el tenant institucional)
-
-`MICROSOFT_OAUTH_CLIENT_ID` y `MICROSOFT_OAUTH_CLIENT_SECRET` deben corresponder a la misma aplicación Azure configurada como proveedor Azure en Supabase Auth. Sin ellas, la primera sincronización funciona con el token entregado al iniciar sesión, pero al expirar Microsoft solicitará reconectar.
-
 Si se quiere probar login, datos reales y diagnostico Supabase en previews de rama, copiar las variables `NEXT_PUBLIC_SUPABASE_*` y las variables Supabase necesarias tambien a Preview. `DATABASE_URL` no esta listado; las rutas principales usan Supabase, pero la ruta legacy `/api/tasks` lo requiere si se usa Postgres directo.
 
 ## R2
@@ -116,6 +106,7 @@ Migraciones aplicadas o requeridas por esta fase:
 - `db/010_owner_only_profile_permissions.sql`
 - `db/011_microsoft_calendar_sync.sql`
 - `db/012_normalize_material_sections.sql`
+- `db/013_remove_microsoft_calendar_sync.sql`
 
 La seccion `Preferencias` guarda preferencias por usuario en `app_profiles.preferences`; el admin no controla la vista global de todos. La lista de grupo usa:
 
@@ -128,7 +119,6 @@ La operacion actual tambien usa:
 - `notifications`
 - `audit_log`
 - vistas `report_task_summary`, `report_material_summary`, `report_student_followup`
-- `microsoft_calendar_connections` y `task_calendar_events`, sin permisos para `anon` ni `authenticated`
 
 Permisos admin por perfil:
 
