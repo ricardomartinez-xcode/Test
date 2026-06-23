@@ -324,9 +324,8 @@ body {
 }
 
 .groupToolbar {
-  position: sticky;
-  top: 52px;
-  z-index: 8;
+  position: relative;
+  z-index: 3;
 }
 
 .groupToolbar,
@@ -335,6 +334,7 @@ body {
 }
 
 .groupTableWrap {
+  position: relative;
   max-height: calc(100dvh - 128px);
 }
 
@@ -343,6 +343,13 @@ body {
   height: 32px;
   padding: 0 8px;
   font-size: 12px;
+}
+
+.memberTable th {
+  position: sticky;
+  top: 0;
+  z-index: 2;
+  background: var(--surface);
 }
 
 .memberTable th:nth-child(1),
@@ -445,9 +452,6 @@ body {
     min-height: 124px;
   }
 
-  .groupToolbar {
-    top: 50px;
-  }
 }
 
 @media (max-width: 430px) {
