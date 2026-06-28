@@ -22,7 +22,7 @@
   "r2_buckets": [
     {
       "binding": "MATERIALS_BUCKET",
-      "bucket_name": "pscv-room-materials"
+      "bucket_name": "psicologia"
     }
   ]
 }
