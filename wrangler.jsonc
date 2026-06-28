@@ -15,7 +15,7 @@
     {
       "binding": "DB",
       "database_name": "pscv-room",
-      "database_id": "REPLACE_WITH_D1_DATABASE_ID",
+      "database_id": "49c23a1e-de2c-473b-a627-d6efe862b4b3",
       "migrations_dir": "migrations"
     }
   ],
