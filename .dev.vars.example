@@ -1,0 +1,12 @@
+# Solo para wrangler dev. Nunca subir secretos reales.
+AUTH_MODE="development"
+DEV_AUTH_EMAIL="admin@example.com"
+
+# Se requieren en staging/producción con Cloudflare Access.
+ACCESS_TEAM_DOMAIN="your-team.cloudflareaccess.com"
+ACCESS_AUD="replace-with-access-application-aud"
+
+# Opcionales: notificaciones y URLs públicas de recursos no sensibles.
+RESEND_API_KEY=""
+EMAIL_FROM="PSCV Room <avisos@example.com>"
+R2_PUBLIC_BASE_URL="https://assets.example.com"
