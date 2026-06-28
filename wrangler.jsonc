@@ -1,0 +1,28 @@
+{
+  "$schema": "node_modules/wrangler/config-schema.json",
+  "name": "pscv-room",
+  "main": ".open-next/worker.js",
+  "compatibility_date": "2026-06-27",
+  "compatibility_flags": ["nodejs_compat"],
+  "observability": {
+    "enabled": true
+  },
+  "vars": {
+    "APP_NAME": "PSCV Room 2.0",
+    "AUTH_MODE": "cloudflare-access"
+  },
+  "d1_databases": [
+    {
+      "binding": "DB",
+      "database_name": "pscv-room",
+      "database_id": "49c23a1e-de2c-473b-a627-d6efe862b4b3",
+      "migrations_dir": "migrations"
+    }
+  ],
+  "r2_buckets": [
+    {
+      "binding": "MATERIALS_BUCKET",
+      "bucket_name": "psicologia"
+    }
+  ]
+}
