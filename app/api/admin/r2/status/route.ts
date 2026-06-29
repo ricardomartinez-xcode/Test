@@ -8,18 +8,15 @@ import {
   listR2Objects,
 } from "@/lib/server/r2";
 import { MATERIALS_R2_ROOT } from "@/lib/server/r2-paths";
-import { createSupabaseServerClient } from "@/lib/supabase/server";
-import { errorResponse, requirePermission, requireProfile } from "@/lib/server/authz";
+import { errorResponse, requirePermission } from "@/lib/server/authz";
 
 function present(name: string) {
   return Boolean(process.env[name]?.trim());
 }
 
-export async function GET() {
+export async function GET(request: Request) {
   try {
-    const supabase = await createSupabaseServerClient();
-    await requireProfile(supabase);
-    await requirePermission(supabase, "r2:manage");
+    await requirePermission(request, "r2:manage");
 
     const endpoint = getR2EndpointConfig();
     const bucket = getR2BucketName();

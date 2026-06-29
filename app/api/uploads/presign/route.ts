@@ -2,8 +2,7 @@ import { NextResponse } from "next/server";
 import { z } from "zod";
 import { buildMaterialR2Key, MATERIALS_R2_ROOT } from "@/lib/server/r2-paths";
 import { createUploadUrl, hasR2Config } from "@/lib/server/r2";
-import { createSupabaseServerClient } from "@/lib/supabase/server";
-import { errorResponse, requirePermission, requireProfile } from "@/lib/server/authz";
+import { errorResponse, requirePermission } from "@/lib/server/authz";
 
 const uploadSchema = z.object({
   fileName: z.string().min(1),
@@ -13,9 +12,7 @@ const uploadSchema = z.object({
 
 export async function POST(request: Request) {
   try {
-    const supabase = await createSupabaseServerClient();
-    await requireProfile(supabase);
-    await requirePermission(supabase, "r2:manage");
+    await requirePermission(request, "r2:manage");
 
     if (!hasR2Config()) {
       return NextResponse.json(

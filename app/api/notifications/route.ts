@@ -14,10 +14,10 @@ const emailPreferenceSchema = z.object({
 
 const preferenceSelect = "profile_id,in_app_enabled,email_enabled,due_soon_hours,categories";
 
-export async function GET() {
+export async function GET(request: Request) {
   try {
     const supabase = await createSupabaseServerClient();
-    const profile = await requireProfile(supabase);
+    const profile = await requireProfile(request);
     const now = new Date().toISOString();
 
     const [notifications, preferences] = await Promise.all([
@@ -56,7 +56,7 @@ export async function GET() {
 export async function PATCH(request: Request) {
   try {
     const supabase = await createSupabaseServerClient();
-    await requireProfile(supabase);
+    await requireProfile(request);
     const body = patchSchema.parse(await request.json());
     const patch = body.action === "read"
       ? { read_at: new Date().toISOString() }
@@ -77,7 +77,7 @@ export async function PATCH(request: Request) {
 export async function PUT(request: Request) {
   try {
     const supabase = await createSupabaseServerClient();
-    const profile = await requireProfile(supabase);
+    const profile = await requireProfile(request);
     const body = emailPreferenceSchema.parse(await request.json());
 
     const { data, error } = await supabase

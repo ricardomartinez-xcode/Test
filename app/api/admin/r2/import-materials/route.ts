@@ -2,7 +2,7 @@ import { NextResponse } from "next/server";
 import { createPublicR2Url, getR2BucketName, listR2Objects, type R2ListedObject } from "@/lib/server/r2";
 import { MATERIALS_R2_ROOT, materialSectionPathFromR2Key } from "@/lib/server/r2-paths";
 import { createSupabaseServerClient } from "@/lib/supabase/server";
-import { errorResponse, requirePermission, requireProfile } from "@/lib/server/authz";
+import { errorResponse, requirePermission } from "@/lib/server/authz";
 
 type SupabaseServerClient = Awaited<ReturnType<typeof createSupabaseServerClient>>;
 type DbError = { message: string } | null;
@@ -166,9 +166,8 @@ async function resetMaterials(supabase: SupabaseServerClient, scope: "r2" | "all
 
 async function runImport(request: Request, fallbackBody: ImportRequest) {
   try {
+    await requirePermission(request, "r2:manage");
     const supabase = await createSupabaseServerClient();
-    await requireProfile(supabase);
-    await requirePermission(supabase, "r2:manage");
 
     const body = request.method === "POST" ? ((await request.json().catch(() => ({}))) as ImportRequest) : fallbackBody;
     const dryRun = body.dryRun ?? request.method !== "POST";
