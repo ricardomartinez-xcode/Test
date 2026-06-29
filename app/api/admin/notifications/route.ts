@@ -1,6 +1,6 @@
 import { NextResponse } from "next/server";
 import { z } from "zod";
-import { errorResponse, requirePermission, requireProfile } from "@/lib/server/authz";
+import { errorResponse, requirePermission } from "@/lib/server/authz";
 import { deliverAnnouncementEmails, type AnnouncementNotification } from "@/lib/server/notification-email";
 import { groupAdminNotifications, type AdminNotificationRow } from "@/lib/server/notification-groups";
 import { createSupabaseServerClient } from "@/lib/supabase/server";
@@ -18,12 +18,10 @@ type ProfileTarget = {
   role: "student" | "admin" | "owner";
 };
 
-export async function GET() {
+export async function GET(request: Request) {
   try {
+    await requirePermission(request, "notifications:manage");
     const supabase = await createSupabaseServerClient();
-    await requireProfile(supabase);
-    await requirePermission(supabase, "notifications:manage");
-
     const { data, error } = await supabase
       .from("notifications")
       .select("id,profile_id,kind,priority,title,body,entity,entity_id,read_at,dismissed_at,created_at")
@@ -31,9 +29,10 @@ export async function GET() {
       .limit(500);
 
     if (error) throw new Error(error.message);
-    return NextResponse.json({ ok: true, notifications: groupAdminNotifications((data ?? []) as AdminNotificationRow[]) }, {
-      headers: { "Cache-Control": "no-store" },
-    });
+    return NextResponse.json(
+      { ok: true, notifications: groupAdminNotifications((data ?? []) as AdminNotificationRow[]) },
+      { headers: { "Cache-Control": "no-store" } },
+    );
   } catch (error) {
     return errorResponse(error);
   }
@@ -41,9 +40,8 @@ export async function GET() {
 
 export async function POST(request: Request) {
   try {
+    const profile = await requirePermission(request, "notifications:manage");
     const supabase = await createSupabaseServerClient();
-    const profile = await requireProfile(supabase);
-    await requirePermission(supabase, "notifications:manage");
     const body = notificationSchema.parse(await request.json());
 
     let targetsQuery = supabase
@@ -68,7 +66,13 @@ export async function POST(request: Request) {
       created_by: profile.id,
     }));
 
-    if (!rows.length) return NextResponse.json({ ok: true, inserted: 0, email: { configured: false, considered: 0, delivered: 0, skipped: 0, failed: 0, errors: [] } });
+    if (!rows.length) {
+      return NextResponse.json({
+        ok: true,
+        inserted: 0,
+        email: { configured: false, considered: 0, delivered: 0, skipped: 0, failed: 0, errors: [] },
+      });
+    }
 
     const { data: insertedRows, error } = await supabase
       .from("notifications")
