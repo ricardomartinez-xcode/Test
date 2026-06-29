@@ -1,0 +1,149 @@
+name: Apply Cloudflare Access route contract (temporary)
+
+on:
+  push:
+    branches:
+      - fix/cloudflare-access-route-contract
+
+permissions:
+  contents: write
+
+jobs:
+  patch:
+    if: ${{ github.actor != 'github-actions[bot]' }}
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: fix/cloudflare-access-route-contract
+      - name: Apply typed Access-route corrections
+        shell: bash
+        run: |
+          set -euo pipefail
+          python3 - <<'PY'
+          from pathlib import Path
+
+          def replace_once(path: str, old: str, new: str) -> None:
+              file = Path(path)
+              source = file.read_text()
+              count = source.count(old)
+              if count != 1:
+                  raise RuntimeError(f"{path}: expected exactly one replacement, found {count}")
+              file.write_text(source.replace(old, new, 1))
+
+          def replace_all(path: str, old: str, new: str, expected: int) -> None:
+              file = Path(path)
+              source = file.read_text()
+              count = source.count(old)
+              if count != expected:
+                  raise RuntimeError(f"{path}: expected {expected} replacements, found {count}")
+              file.write_text(source.replace(old, new))
+
+          replace_once("app/api/admin/r2/import-materials/route.ts",
+              'import { errorResponse, requirePermission, requireProfile } from "@/lib/server/authz";',
+              'import { errorResponse, requirePermission } from "@/lib/server/authz";')
+          replace_once("app/api/admin/r2/import-materials/route.ts",
+              '    const supabase = await createSupabaseServerClient();\n    await requireProfile(supabase);\n    await requirePermission(supabase, "r2:manage");',
+              '    await requirePermission(request, "r2:manage");\n    const supabase = await createSupabaseServerClient();')
+
+          replace_once("app/api/admin/r2/status/route.ts",
+              'import { createSupabaseServerClient } from "@/lib/supabase/server";\n', '')
+          replace_once("app/api/admin/r2/status/route.ts",
+              'import { errorResponse, requirePermission, requireProfile } from "@/lib/server/authz";',
+              'import { errorResponse, requirePermission } from "@/lib/server/authz";')
+          replace_once("app/api/admin/r2/status/route.ts",
+              'export async function GET() {\n  try {\n    const supabase = await createSupabaseServerClient();\n    await requireProfile(supabase);\n    await requirePermission(supabase, "r2:manage");',
+              'export async function GET(request: Request) {\n  try {\n    await requirePermission(request, "r2:manage");')
+
+          replace_once("app/api/admin/tasks/[id]/materials/route.ts",
+              'import { errorResponse, requirePermission, requireProfile } from "@/lib/server/authz";',
+              'import { errorResponse, requirePermission } from "@/lib/server/authz";')
+          replace_once("app/api/admin/tasks/[id]/materials/route.ts",
+              'export async function GET(_request: Request, context: RouteContext) {',
+              'export async function GET(request: Request, context: RouteContext) {')
+          replace_all("app/api/admin/tasks/[id]/materials/route.ts",
+              '    await requireProfile(supabase);\n    await requirePermission(supabase, "tasks:edit");',
+              '    await requirePermission(request, "tasks:edit");', 3)
+
+          replace_once("app/api/admin/tasks/[id]/route.ts",
+              'import { errorResponse, requirePermission, requireProfile } from "@/lib/server/authz";',
+              'import { errorResponse, requirePermission } from "@/lib/server/authz";')
+          replace_once("app/api/admin/tasks/[id]/route.ts",
+              'export async function GET(_request: Request, context: RouteContext) {',
+              'export async function GET(request: Request, context: RouteContext) {')
+          replace_once("app/api/admin/tasks/[id]/route.ts",
+              '    await requireProfile(supabase);\n    await requirePermission(supabase, "tasks:edit");',
+              '    await requirePermission(request, "tasks:edit");')
+          replace_once("app/api/admin/tasks/[id]/route.ts",
+              '    const profile = await requireProfile(supabase);\n    await requirePermission(supabase, "tasks:edit");',
+              '    const profile = await requirePermission(request, "tasks:edit");')
+          replace_once("app/api/admin/tasks/[id]/route.ts",
+              'export async function DELETE(_request: Request, context: RouteContext) {',
+              'export async function DELETE(request: Request, context: RouteContext) {')
+          replace_once("app/api/admin/tasks/[id]/route.ts",
+              '    const profile = await requireProfile(supabase);\n    await requirePermission(supabase, "tasks:delete");',
+              '    const profile = await requirePermission(request, "tasks:delete");')
+
+          replace_once("app/api/admin/tasks/route.ts",
+              'import { errorResponse, requirePermission, requireProfile } from "@/lib/server/authz";',
+              'import { errorResponse, requirePermission } from "@/lib/server/authz";')
+          replace_once("app/api/admin/tasks/route.ts",
+              '    const profile = await requireProfile(supabase);\n    await requirePermission(supabase, "tasks:edit");',
+              '    const profile = await requirePermission(request, "tasks:edit");')
+
+          replace_once("app/api/notifications/route.ts",
+              'export async function GET() {',
+              'export async function GET(request: Request) {')
+          replace_all("app/api/notifications/route.ts",
+              'requireProfile(supabase)', 'requireProfile(request)', 3)
+
+          replace_once("app/api/reports/operations/route.ts",
+              'import { errorResponse, requirePermission, requireProfile } from "@/lib/server/authz";',
+              'import { errorResponse, requirePermission } from "@/lib/server/authz";')
+          replace_once("app/api/reports/operations/route.ts",
+              'export async function GET() {\n  try {\n    const supabase = await createSupabaseServerClient();\n    await requireProfile(supabase);\n    await requirePermission(supabase, "reports:view");',
+              'export async function GET(request: Request) {\n  try {\n    await requirePermission(request, "reports:view");\n    const supabase = await createSupabaseServerClient();')
+
+          replace_once("app/api/uploads/presign/route.ts",
+              'import { createSupabaseServerClient } from "@/lib/supabase/server";\n', '')
+          replace_once("app/api/uploads/presign/route.ts",
+              'import { errorResponse, requirePermission, requireProfile } from "@/lib/server/authz";',
+              'import { errorResponse, requirePermission } from "@/lib/server/authz";')
+          replace_once("app/api/uploads/presign/route.ts",
+              '    const supabase = await createSupabaseServerClient();\n    await requireProfile(supabase);\n    await requirePermission(supabase, "r2:manage");',
+              '    await requirePermission(request, "r2:manage");')
+
+          replace_once("app/api/health/route.ts",
+              'export function GET() {\n  return NextResponse.json({\n    ok: true,\n    app: "PSCV Room 2.0",\n    mode: hasDatabase() ? "database" : "demo",',
+              'export async function GET() {\n  const databaseAvailable = await hasDatabase();\n  return NextResponse.json({\n    ok: true,\n    app: "PSCV Room 2.0",\n    mode: databaseAvailable ? "database" : "demo",')
+          replace_once("app/api/health/route.ts",
+              '      postgresDirect: hasDatabase(),',
+              '      postgresDirect: databaseAvailable,')
+
+          replace_once("lib/server/authz.ts",
+              'function enabled(value: number | null | undefined) {',
+              'function enabled(value: number | boolean | null | undefined) {')
+
+          replace_once("lib/server/db.ts",
+              'const d1Sql: D1Sql = async (strings, ...values) => {\n  const text = toSQLite(strings.join("?"));\n  const db = await getD1();\n  const statement = db.prepare(text).bind(...values);\n  const result = await statement.all();\n  return result.results as Record<string, unknown>[];\n};',
+              'const d1Sql: D1Sql = async <T extends Record<string, unknown> = Record<string, unknown>>(strings, ...values) => {\n  const text = toSQLite(strings.join("?"));\n  const db = await getD1();\n  const statement = db.prepare(text).bind(...values);\n  const result = await statement.all();\n  return result.results as T[];\n};')
+
+          replace_once("app/api/tasks/route.ts",
+              'import { calculateDaysRemaining, deriveReaderVisibility, deriveStatus } from "@/lib/task-utils";',
+              'import type { TaskStatus } from "@/lib/domain";\nimport { calculateDaysRemaining, deriveReaderVisibility, deriveStatus } from "@/lib/task-utils";')
+          replace_once("app/api/tasks/route.ts",
+              'const taskSchema = z.object({',
+              'type TaskRow = {\n  id: string;\n  course: string;\n  due_date: string | Date;\n  due_time: string | Date;\n  title: string;\n  material_needed: string | null;\n  material_url: string | null;\n  delivery_type: string;\n  status: TaskStatus;\n  notes: string | null;\n  platform_url: string | null;\n  calendar_event_id: string | null;\n  last_sync_at: string | Date | null;\n};\n\nconst taskSchema = z.object({')
+          replace_once("app/api/tasks/route.ts",
+              '  const rows = await sql`',
+              '  const rows = await sql<TaskRow>`')
+          PY
+      - name: Commit route contract corrections
+        shell: bash
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add app lib
+          git diff --cached --quiet || git commit -m "fix(auth): align API routes with Cloudflare Access"
+          git push origin HEAD:fix/cloudflare-access-route-contract
