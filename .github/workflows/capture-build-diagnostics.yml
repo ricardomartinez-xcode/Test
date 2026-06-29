@@ -1,0 +1,76 @@
+name: Capture PSCV build diagnostics
+
+on:
+  push:
+    branches:
+      - fix/cloudflare-access-route-contract
+
+permissions:
+  contents: write
+
+jeobs:
+  capture:
+    if: ${{ github.actor != 'github-actions[bot]' }}
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: fix/cloudflare-access-route-contract
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "22"
+      - name: Capture validation output
+        id: validation
+        shell: bash
+        run: |
+          set +e
+          mkdir -p .ci-diagnostics
+          {
+            echo "# PSCV-ROOM build diagnostic"
+            echo "commit=${GITHUB_SHA}"
+            echo "ref=${GITHUB_REF}"
+            echo
+            echo "== npm install =="
+            npm install --no-audit --no-fund
+            install_status=$?
+            echo "npm_install_exit=${install_status}"
+            if [ "${install_status}" -eq 0 ]; then
+              echo
+              echo "== npm run lint =="
+              npm run lint
+              lint_status=$?
+              echo "lint_exit=${lint_status}"
+              echo
+              echo "== npm run typecheck =="
+              npm run typecheck
+              typecheck_status=$?
+              echo "typecheck_exit=${typecheck_status}"
+              echo
+              echo "== npm run cf:build =="
+              npm run cf:build
+              build_status=$?
+              echo "cf_build_exit=${build_status}"
+            else
+              lint_status=1
+              typecheck_status=1
+              build_status=1
+            fi
+          } > .ci-diagnostics/build-validation.log 2>&1
+          overall=0
+          [ "${install_status}" -eq 0 ] || overall=1
+          [ "${lint_status}" -eq 0 ] || overall=1
+          [ "${typecheck_status}" -eq 0 ] || overall=1
+          [ "${build_status}" -eq 0 ] || overall=1
+          echo "overall=${overall}" >> "$GITHUB_OUTPUT"
+      - name: Commit diagnostic output
+        shell: bash
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add .ci-diagnostics/build-validation.log
+          git diff --cached --quiet || git commit -m "chore: capture build diagnostics"
+          git push origin HEAD:fix/cloudflare-access-route-contract
+      - name: Preserve validation outcome
+        if: steps.validation.outputs.overall != '0'
+        run: exit 1
