@@ -1,0 +1,105 @@
+# PSCV-ROOM build diagnostic
+commit=c066175502d2184b759131ce200de0f8abb50f85
+ref=refs/heads/fix/cloudflare-access-route-contract
+
+== npm install ==
+npm warn deprecated node-domexception@1.0.0: Use your platform's native DOMException instead
+npm warn deprecated glob@9.3.5: Old versions of glob are not supported, and contain widely publicized security vulnerabilities, which have been fixed in the current version. Please update. Support for old versions may be purchased (at exorbitant rates) by contacting i@izs.me
+
+added 611 packages in 19s
+npm_install_exit=0
+
+== npm run lint ==
+
+> pscv-room-2@0.1.0 lint
+> eslint .
+
+
+/home/runner/work/PSCV-ROOM/PSCV-ROOM/outputs/moodboards/pscv-room-flujos-reales/app.js
+    31:7   warning  'viewerStage' is assigned a value but never used   @typescript-eslint/no-unused-vars
+  1933:10  warning  'updateSelectionStatus' is defined but never used  @typescript-eslint/no-unused-vars
+  2136:10  warning  'remixVariationRecord' is defined but never used   @typescript-eslint/no-unused-vars
+
+✖ 3 problems (0 errors, 3 warnings)
+
+lint_exit=0
+
+== npm run typecheck ==
+
+> pscv-room-2@0.1.0 typecheck
+> tsc -p tsconfig.json --noEmit
+
+lib/server/db.ts(16,90): error TS7006: Parameter 'strings' implicitly has an 'any' type.
+lib/server/db.ts(16,99): error TS7019: Rest parameter 'values' implicitly has an 'any[]' type.
+typecheck_exit=2
+
+== npm run cf:build ==
+
+> pscv-room-2@0.1.0 cf:build
+> opennextjs-cloudflare build
+
+
+┌─────────────────────────────┐
+│ OpenNext — Cloudflare build │
+└─────────────────────────────┘
+
+App directory: /home/runner/work/PSCV-ROOM/PSCV-ROOM
+Next.js version : 15.5.19
+@opennextjs/cloudflare version: 1.20.1
+@opennextjs/aws version: 4.0.2
+workerd compatibility_date: 2026-06-27
+
+┌─────────────────────────────────┐
+│ OpenNext — Building Next.js app │
+└─────────────────────────────────┘
+
+
+> pscv-room-2@0.1.0 build
+> next build
+
+⚠ No build cache found. Please configure build caching for faster rebuilds. Read more: https://nextjs.org/docs/messages/no-cache
+Attention: Next.js now collects completely anonymous telemetry regarding usage.
+This information is used to shape Next.js' roadmap and prioritize features.
+You can learn more, including how to opt-out if you'd not like to participate in this anonymous program, by visiting the following URL:
+https://nextjs.org/telemetry
+
+   ▲ Next.js 15.5.19
+
+   Creating an optimized production build ...
+ ✓ Compiled successfully in 10.2s
+   Linting and checking validity of types ...
+Failed to compile.
+
+./lib/server/db.ts:16:90
+Type error: Parameter 'strings' implicitly has an 'any' type.
+
+[0m [90m 14 |[39m }
+ [90m 15 |[39m
+[31m[1m>[22m[39m[90m 16 |[39m [36mconst[39m d1Sql[33m:[39m [33mD1Sql[39m [33m=[39m [36masync[39m [33m<[39m[33mT[39m [36mextends[39m [33mRecord[39m[33m<[39m[33mstring[39m[33m,[39m unknown[33m>[39m [33m=[39m [33mRecord[39m[33m<[39m[33mstring[39m[33m,[39m unknown[33m>>[39m(strings[33m,[39m [33m...[39mvalues) [33m=>[39m {
+ [90m    |[39m                                                                                          [31m[1m^[22m[39m
+ [90m 17 |[39m   [36mconst[39m text [33m=[39m toSQLite(strings[33m.[39mjoin([32m"?"[39m))[33m;[39m
+ [90m 18 |[39m   [36mconst[39m db [33m=[39m [36mawait[39m getD1()[33m;[39m
+ [90m 19 |[39m   [36mconst[39m statement [33m=[39m db[33m.[39mprepare(text)[33m.[39mbind([33m...[39mvalues)[33m;[39m[0m
+Next.js build worker exited with code: 1 and signal: null
+node:internal/errors:983
+  const err = new Error(message);
+              ^
+
+Error: Command failed: npm run build
+    at genericNodeError (node:internal/errors:983:15)
+    at wrappedFn (node:internal/errors:537:14)
+    at checkExecSyncError (node:child_process:916:11)
+    at Object.execSync (node:child_process:988:15)
+    at buildNextjsApp (file:///home/runner/work/PSCV-ROOM/PSCV-ROOM/node_modules/@opennextjs/aws/dist/build/buildNextApp.js:15:8)
+    at build (file:///home/runner/work/PSCV-ROOM/PSCV-ROOM/node_modules/@opennextjs/cloudflare/dist/cli/build/build.js:63:9)
+    at async buildCommand (file:///home/runner/work/PSCV-ROOM/PSCV-ROOM/node_modules/@opennextjs/cloudflare/dist/cli/commands/build.js:40:5) {
+  status: 1,
+  signal: null,
+  output: [ null, null, null ],
+  pid: 2495,
+  stdout: null,
+  stderr: null
+}
+
+Node.js v22.23.0
+cf_build_exit=1
