@@ -1,7 +1,7 @@
 import { NextResponse } from "next/server";
 import { z } from "zod";
 import { createSupabaseServerClient } from "@/lib/supabase/server";
-import { errorResponse, requirePermission, requireProfile } from "@/lib/server/authz";
+import { errorResponse, requirePermission } from "@/lib/server/authz";
 
 const taskPatchSchema = z.object({
   title: z.string().min(1).optional(),
@@ -29,12 +29,11 @@ function taskSelect() {
   ].join(",");
 }
 
-export async function GET(_request: Request, context: RouteContext) {
+export async function GET(request: Request, context: RouteContext) {
   try {
     const { id } = await context.params;
     const supabase = await createSupabaseServerClient();
-    await requireProfile(supabase);
-    await requirePermission(supabase, "tasks:edit");
+    await requirePermission(request, "tasks:edit");
 
     const { data, error } = await supabase
       .from("tasks")
@@ -55,8 +54,7 @@ export async function PATCH(request: Request, context: RouteContext) {
   try {
     const { id } = await context.params;
     const supabase = await createSupabaseServerClient();
-    const profile = await requireProfile(supabase);
-    await requirePermission(supabase, "tasks:edit");
+    const profile = await requirePermission(request, "tasks:edit");
     const patch = taskPatchSchema.parse(await request.json());
 
     const before = await supabase.from("tasks").select("*").eq("id", id).maybeSingle();
@@ -86,12 +84,11 @@ export async function PATCH(request: Request, context: RouteContext) {
   }
 }
 
-export async function DELETE(_request: Request, context: RouteContext) {
+export async function DELETE(request: Request, context: RouteContext) {
   try {
     const { id } = await context.params;
     const supabase = await createSupabaseServerClient();
-    const profile = await requireProfile(supabase);
-    await requirePermission(supabase, "tasks:delete");
+    const profile = await requirePermission(request, "tasks:delete");
 
     const before = await supabase.from("tasks").select("*").eq("id", id).maybeSingle();
     if (before.error) return NextResponse.json({ error: before.error.message }, { status: 500 });

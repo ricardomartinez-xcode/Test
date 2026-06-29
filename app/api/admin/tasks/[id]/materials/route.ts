@@ -1,7 +1,7 @@
 import { NextResponse } from "next/server";
 import { z } from "zod";
 import { createSupabaseServerClient } from "@/lib/supabase/server";
-import { errorResponse, requirePermission, requireProfile } from "@/lib/server/authz";
+import { errorResponse, requirePermission } from "@/lib/server/authz";
 
 const materialLinkSchema = z.object({
   materialId: z.string().uuid(),
@@ -9,12 +9,11 @@ const materialLinkSchema = z.object({
 
 type RouteContext = { params: Promise<{ id: string }> };
 
-export async function GET(_request: Request, context: RouteContext) {
+export async function GET(request: Request, context: RouteContext) {
   try {
     const { id } = await context.params;
     const supabase = await createSupabaseServerClient();
-    await requireProfile(supabase);
-    await requirePermission(supabase, "tasks:edit");
+    await requirePermission(request, "tasks:edit");
 
     const { data, error } = await supabase
       .from("task_materials")
@@ -32,8 +31,7 @@ export async function POST(request: Request, context: RouteContext) {
   try {
     const { id } = await context.params;
     const supabase = await createSupabaseServerClient();
-    await requireProfile(supabase);
-    await requirePermission(supabase, "tasks:edit");
+    await requirePermission(request, "tasks:edit");
     const { materialId } = materialLinkSchema.parse(await request.json());
 
     const { error } = await supabase
@@ -59,8 +57,7 @@ export async function DELETE(request: Request, context: RouteContext) {
   try {
     const { id } = await context.params;
     const supabase = await createSupabaseServerClient();
-    await requireProfile(supabase);
-    await requirePermission(supabase, "tasks:edit");
+    await requirePermission(request, "tasks:edit");
     const { materialId } = materialLinkSchema.parse(await request.json());
 
     const { error } = await supabase

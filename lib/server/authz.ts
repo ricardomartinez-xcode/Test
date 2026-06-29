@@ -38,7 +38,7 @@ export class HttpError extends Error {
   }
 }
 
-function enabled(value: number | null | undefined) {
+function enabled(value: number | boolean | null | undefined) {
   return value === 1 || value === true;
 }
 

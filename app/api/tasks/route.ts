@@ -2,7 +2,24 @@ import { NextResponse } from "next/server";
 import { z } from "zod";
 import { seedTasks } from "@/lib/seed";
 import { getSql } from "@/lib/server/db";
+import type { TaskStatus } from "@/lib/domain";
 import { calculateDaysRemaining, deriveReaderVisibility, deriveStatus } from "@/lib/task-utils";
+
+type TaskRow = {
+  id: string;
+  course: string;
+  due_date: string | Date;
+  due_time: string | Date;
+  title: string;
+  material_needed: string | null;
+  material_url: string | null;
+  delivery_type: string;
+  status: TaskStatus;
+  notes: string | null;
+  platform_url: string | null;
+  calendar_event_id: string | null;
+  last_sync_at: string | Date | null;
+};
 
 const taskSchema = z.object({
   course: z.string().min(1),
@@ -23,7 +40,7 @@ export async function GET() {
     return NextResponse.json({ source: "demo", tasks: seedTasks });
   }
 
-  const rows = await sql`
+  const rows = await sql<TaskRow>`
     select
       id,
       course,

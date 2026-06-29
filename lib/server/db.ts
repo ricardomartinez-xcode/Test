@@ -13,12 +13,12 @@ function toSQLite(sql: string) {
     .replace(/\bfalse\b/gi, "0");
 }
 
-const d1Sql: D1Sql = async (strings, ...values) => {
+const d1Sql: D1Sql = async <T extends Record<string, unknown> = Record<string, unknown>>(strings, ...values) => {
   const text = toSQLite(strings.join("?"));
   const db = await getD1();
   const statement = db.prepare(text).bind(...values);
   const result = await statement.all();
-  return result.results as Record<string, unknown>[];
+  return result.results as T[];
 };
 
 /**

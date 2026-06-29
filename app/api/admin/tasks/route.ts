@@ -1,6 +1,6 @@
 import { NextResponse } from "next/server";
 import { z } from "zod";
-import { errorResponse, requirePermission, requireProfile } from "@/lib/server/authz";
+import { errorResponse, requirePermission } from "@/lib/server/authz";
 import { createSupabaseServerClient } from "@/lib/supabase/server";
 
 const taskCreateSchema = z.object({
@@ -21,8 +21,7 @@ const taskCreateSchema = z.object({
 export async function POST(request: Request) {
   try {
     const supabase = await createSupabaseServerClient();
-    const profile = await requireProfile(supabase);
-    await requirePermission(supabase, "tasks:edit");
+    const profile = await requirePermission(request, "tasks:edit");
     const input = taskCreateSchema.parse(await request.json());
 
     const { data, error } = await supabase

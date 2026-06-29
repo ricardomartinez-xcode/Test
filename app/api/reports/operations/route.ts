@@ -1,12 +1,11 @@
 import { NextResponse } from "next/server";
-import { errorResponse, requirePermission, requireProfile } from "@/lib/server/authz";
+import { errorResponse, requirePermission } from "@/lib/server/authz";
 import { createSupabaseServerClient } from "@/lib/supabase/server";
 
-export async function GET() {
+export async function GET(request: Request) {
   try {
+    await requirePermission(request, "reports:view");
     const supabase = await createSupabaseServerClient();
-    await requireProfile(supabase);
-    await requirePermission(supabase, "reports:view");
 
     const [tasks, materials, students, audit] = await Promise.all([
       supabase.from("report_task_summary").select("*").order("course").order("delivery_type"),
