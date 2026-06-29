@@ -1,8 +1,8 @@
 import { NextResponse } from "next/server";
 import { z } from "zod";
+import type { TaskStatus } from "@/lib/domain";
 import { seedTasks } from "@/lib/seed";
 import { getSql } from "@/lib/server/db";
-import type { TaskStatus } from "@/lib/domain";
 import { calculateDaysRemaining, deriveReaderVisibility, deriveStatus } from "@/lib/task-utils";
 
 type TaskRow = {
@@ -36,25 +36,9 @@ const taskSchema = z.object({
 
 export async function GET() {
   const sql = getSql();
-  if (!sql) {
-    return NextResponse.json({ source: "demo", tasks: seedTasks });
-  }
-
   const rows = await sql<TaskRow>`
-    select
-      id,
-      course,
-      due_date,
-      due_time,
-      title,
-      material_needed,
-      material_url,
-      delivery_type,
-      status,
-      notes,
-      platform_url,
-      calendar_event_id,
-      last_sync_at
+    select id, course, due_date, due_time, title, material_needed, material_url,
+      delivery_type, status, notes, platform_url, calendar_event_id, last_sync_at
     from tasks
     where archived_at is null
     order by due_date asc, due_time asc
@@ -66,6 +50,7 @@ export async function GET() {
       const dueDate = row.due_date instanceof Date ? row.due_date.toISOString().slice(0, 10) : String(row.due_date);
       const daysRemaining = calculateDaysRemaining(dueDate);
       const status = deriveStatus(row.status, daysRemaining);
+
       return {
         id: row.id,
         course: row.course,
@@ -89,24 +74,17 @@ export async function GET() {
 
 export async function POST(request: Request) {
   const sql = getSql();
-  if (!sql) {
-    return NextResponse.json(
-      { error: "DATABASE_URL no está configurado. En modo demo la UI usa localStorage." },
-      { status: 501 },
-    );
-  }
-
   const payload = taskSchema.parse(await request.json());
-  const [task] = await sql`
+  const [task] = await sql<{ id: string }>`
     insert into tasks (
       course, due_date, due_time, title, material_needed, material_url,
       delivery_type, status, notes, platform_url
     ) values (
       ${payload.course}, ${payload.dueDate}, ${payload.dueTime}, ${payload.title},
       ${payload.materialNeeded ?? null}, ${payload.materialUrl || null},
-      ${payload.deliveryType}, ${payload.status}, ${payload.notes ?? null}, ${payload.platformUrl || null}
-    )
-    returning id
+      ${payload.deliveryType}, ${payload.status}, ${payload.notes ?? null},
+      ${payload.platformUrl || null}
+    ) returning id
   `;
 
   return NextResponse.json({ ok: true, id: task.id }, { status: 201 });

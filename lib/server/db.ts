@@ -13,7 +13,12 @@ function toSQLite(sql: string) {
     .replace(/\bfalse\b/gi, "0");
 }
 
-const d1Sql: D1Sql = async <T extends Record<string, unknown> = Record<string, unknown>>(strings, ...values) => {
+const d1Sql: D1Sql = async <
+  T extends Record<string, unknown> = Record<string, unknown>,
+>(
+  strings: TemplateStringsArray,
+  ...values: unknown[]
+): Promise<T[]> => {
   const text = toSQLite(strings.join("?"));
   const db = await getD1();
   const statement = db.prepare(text).bind(...values);
@@ -22,8 +27,9 @@ const d1Sql: D1Sql = async <T extends Record<string, unknown> = Record<string, u
 };
 
 /**
- * Compatibility tag for existing route handlers. PostgreSQL tagged-template
- * interpolation is translated to D1 positional bindings; callers keep `await sql\`...\``.
+ * Compatibility tag for existing route handlers.
+ * PostgreSQL tagged-template interpolation is translated to D1 positional bindings;
+ * callers keep `await sql\`...\``.
  */
 export function getSql(): D1Sql {
   return d1Sql;
