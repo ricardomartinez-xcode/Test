@@ -45,6 +45,8 @@ declare global {
     AUTH_MODE: "cloudflare-access" | "development";
     ACCESS_TEAM_DOMAIN?: string;
     ACCESS_AUD?: string;
+    /** Diagnostic label only, for example "keycloak". Never store a client secret here. */
+    AUTH_IDENTITY_PROVIDER?: string;
     DEV_AUTH_EMAIL?: string;
     ALLOW_DEV_AUTH?: string;
     R2_PUBLIC_BASE_URL?: string;
