@@ -46,6 +46,7 @@ declare global {
     ACCESS_TEAM_DOMAIN?: string;
     ACCESS_AUD?: string;
     DEV_AUTH_EMAIL?: string;
+    ALLOW_DEV_AUTH?: string;
     R2_PUBLIC_BASE_URL?: string;
     RESEND_API_KEY?: string;
     EMAIL_FROM?: string;

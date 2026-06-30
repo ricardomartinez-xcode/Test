@@ -1,6 +1,6 @@
 import { NextResponse } from "next/server";
-import { createPublicR2Url, createR2ReadUrl, hasR2Config, resolveR2ObjectKey } from "@/lib/server/r2";
-import { createSupabaseServerClient } from "@/lib/supabase/server";
+import { createNativePublicR2Url, getNativeR2Object, resolveNativeR2ObjectKey } from "@/lib/server/r2-native";
+import { d1First, d1Run } from "@/lib/server/d1-data";
 
 const isDebug = process.env.R2_DEBUG === "1";
 
@@ -46,78 +46,55 @@ export async function GET(request: Request, context: RouteContext) {
   const requestUrl = new URL(request.url);
   const mode = requestUrl.searchParams.get("mode") === "download" ? "download" : "preview";
 
-  const supabase = await createSupabaseServerClient();
-  const { data, error } = await supabase
-    .from("materials")
-    .select("id,title,provider,r2_key,file_name,content_type")
-    .eq("id", id)
-    .maybeSingle<MaterialFileRow>();
-
-  if (error) return unavailableFileResponse(request, error.message, 500);
+  const data = await d1First<MaterialFileRow>(
+    "SELECT id, title, provider, r2_key, file_name, content_type FROM materials WHERE id = ? LIMIT 1",
+    [id],
+  );
   if (!data) return unavailableFileResponse(request, "Material no encontrado.", 404);
   if (!data.r2_key) return unavailableFileResponse(request, "Este material no tiene asset R2 asociado.", 404);
 
   let resolvedKey = data.r2_key;
 
-  if (hasR2Config()) {
-    try {
-      resolvedKey = await resolveR2ObjectKey({ key: data.r2_key, fileName: data.file_name, title: data.title });
+  try {
+    resolvedKey = await resolveNativeR2ObjectKey({ key: data.r2_key, fileName: data.file_name, title: data.title });
+    const publicUrl = await createNativePublicR2Url(resolvedKey);
 
-      if (resolvedKey !== data.r2_key) {
-        await supabase
-          .from("materials")
-          .update({
-            r2_key: resolvedKey,
-            source_url: createPublicR2Url(resolvedKey),
-            preview_url: createPublicR2Url(resolvedKey),
-            updated_at: new Date().toISOString(),
-          })
-          .eq("id", data.id);
-      }
-    } catch (resolveError) {
-      if (isDebug) {
-        return NextResponse.json(
-          {
-            error: resolveError instanceof Error ? resolveError.message : "No se pudo resolver el objeto R2.",
-            materialId: data.id,
-            r2Key: data.r2_key,
-            fileName: data.file_name,
-            title: data.title,
-          },
-          { status: 404 },
-        );
-      }
-
-      return unavailableFileResponse(
-        request,
-        resolveError instanceof Error ? resolveError.message : "No se pudo resolver el objeto R2.",
-        404,
+    if (resolvedKey !== data.r2_key) {
+      await d1Run(
+        "UPDATE materials SET r2_key = ?, source_url = ?, preview_url = ?, updated_at = ? WHERE id = ?",
+        [resolvedKey, publicUrl, publicUrl, new Date().toISOString(), data.id],
       );
     }
-  }
 
-  const publicUrl = createPublicR2Url(resolvedKey);
+    if (publicUrl) return NextResponse.redirect(publicUrl, { status: 302 });
 
-  if (publicUrl) return NextResponse.redirect(publicUrl, { status: 302 });
+    const object = await getNativeR2Object(resolvedKey);
+    if (!object?.body) return unavailableFileResponse(request, "Objeto R2 no encontrado.", 404);
 
-  if (!hasR2Config()) {
-    return unavailableFileResponse(request, "R2 no está configurado para lectura y no hay dominio público configurado.", 501);
-  }
-
-  try {
-    const signedUrl = await createR2ReadUrl({
-      key: resolvedKey,
-      fileName: data.file_name || data.title,
-      contentType: data.content_type,
-      disposition: mode === "download" ? "attachment" : "inline",
-    });
-
-    return NextResponse.redirect(signedUrl, { status: 302 });
-  } catch (signError) {
+    const headers = new Headers();
+    object.writeHttpMetadata(headers);
+    headers.set("etag", object.etag);
+    if (data.content_type && !headers.has("content-type")) headers.set("content-type", data.content_type);
+    const fileName = encodeURIComponent(data.file_name || data.title || "material");
+    headers.set("content-disposition", `${mode === "download" ? "attachment" : "inline"}; filename*=UTF-8''${fileName}`);
+    return new Response(object.body, { headers });
+  } catch (readError) {
+    if (isDebug) {
+      return NextResponse.json(
+        {
+          error: readError instanceof Error ? readError.message : "No se pudo resolver el objeto R2.",
+          materialId: data.id,
+          r2Key: data.r2_key,
+          fileName: data.file_name,
+          title: data.title,
+        },
+        { status: 404 },
+      );
+    }
     return unavailableFileResponse(
       request,
-      signError instanceof Error ? signError.message : "No se pudo firmar el documento R2.",
-      500,
+      readError instanceof Error ? readError.message : "No se pudo leer el documento R2.",
+      404,
     );
   }
 }

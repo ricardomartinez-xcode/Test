@@ -1,15 +1,13 @@
 import { NextResponse } from "next/server";
-import { createPublicR2Url, getR2BucketName, listR2Objects, type R2ListedObject } from "@/lib/server/r2";
+import { createNativePublicR2Url, listNativeR2Objects, type NativeR2ListedObject } from "@/lib/server/r2-native";
 import { MATERIALS_R2_ROOT, materialSectionPathFromR2Key } from "@/lib/server/r2-paths";
-import { createSupabaseServerClient } from "@/lib/supabase/server";
 import { errorResponse, requirePermission } from "@/lib/server/authz";
+import { d1All, d1Run } from "@/lib/server/d1-data";
 
-type SupabaseServerClient = Awaited<ReturnType<typeof createSupabaseServerClient>>;
-type DbError = { message: string } | null;
 type ImportRequest = { dryRun?: boolean; root?: string; maxItems?: number; reset?: boolean; resetScope?: "r2" | "all"; confirm?: string };
 type SectionRow = { id: string; path: string };
 type MaterialRow = { id: string; r2_key: string | null };
-type ImportableObject = R2ListedObject & { fileName: string; sectionPath: string; title: string; contentType: string; materialType: string; publicUrl: string | null };
+type ImportableObject = NativeR2ListedObject & { fileName: string; sectionPath: string; title: string; contentType: string; materialType: string; publicUrl: string | null };
 
 const RESET_CONFIRMATION = "REIMPORTAR_R2";
 const SKIP_FILE_RE = /(^|\/)\.(DS_Store|keep)$|(^|\/)Thumbs\.db$/i;
@@ -66,12 +64,12 @@ function inferMaterialType(fileName: string) {
   return "Archivo";
 }
 
-function isImportableObject(object: R2ListedObject) {
+function isImportableObject(object: NativeR2ListedObject) {
   const fileName = basename(object.key);
   return Boolean(fileName && fileName.includes(".") && !SKIP_FILE_RE.test(object.key));
 }
 
-function toImportable(object: R2ListedObject): ImportableObject {
+async function toImportable(object: NativeR2ListedObject): Promise<ImportableObject> {
   const fileName = basename(object.key);
   return {
     ...object,
@@ -80,7 +78,7 @@ function toImportable(object: R2ListedObject): ImportableObject {
     title: titleFromFileName(fileName),
     contentType: inferContentType(fileName),
     materialType: inferMaterialType(fileName),
-    publicUrl: createPublicR2Url(object.key),
+    publicUrl: await createNativePublicR2Url(object.key),
   };
 }
 
@@ -90,15 +88,12 @@ function chunk<T>(items: T[], size: number) {
   return out;
 }
 
-async function loadSectionMap(supabase: SupabaseServerClient) {
-  const result = await supabase.from("material_sections").select("id,path");
-  const error = result.error as DbError;
-  if (error) throw new Error(error.message);
-  const rows = (result.data ?? []) as SectionRow[];
+async function loadSectionMap() {
+  const rows = await d1All<SectionRow>("SELECT id, path FROM material_sections");
   return new Map(rows.map((row) => [cleanPath(row.path), row.id]));
 }
 
-async function ensureSectionPath(supabase: SupabaseServerClient, sectionMap: Map<string, string>, sectionPath: string) {
+async function ensureSectionPath(sectionMap: Map<string, string>, sectionPath: string) {
   const parts = cleanPath(sectionPath).split("/").filter(Boolean);
   let parentId: string | null = null;
   let currentPath = "";
@@ -111,24 +106,12 @@ async function ensureSectionPath(supabase: SupabaseServerClient, sectionMap: Map
       continue;
     }
 
-    const insertResult = await supabase
-      .from("material_sections")
-      .insert({
-        parent_id: parentId,
-        name: part,
-        slug: slugify(index === 0 ? currentPath : part),
-        path: currentPath,
-        active: true,
-        sort_order: sectionMap.size,
-      })
-      .select("id,path")
-      .single();
-
-    const error = insertResult.error as DbError;
-    if (error) throw new Error(error.message);
-
-    const row = insertResult.data as SectionRow | null;
-    if (!row) throw new Error(`No se pudo crear la seccion ${currentPath}.`);
+    const row: SectionRow = { id: crypto.randomUUID(), path: currentPath };
+    await d1Run(
+      `INSERT INTO material_sections (id, parent_id, name, slug, path, active, sort_order)
+       VALUES (?, ?, ?, ?, ?, 1, ?)`,
+      [row.id, parentId, part, slugify(index === 0 ? currentPath : part), currentPath, sectionMap.size],
+    );
 
     sectionMap.set(cleanPath(row.path), row.id);
     parentId = row.id;
@@ -137,29 +120,28 @@ async function ensureSectionPath(supabase: SupabaseServerClient, sectionMap: Map
   return parentId;
 }
 
-async function loadExistingMaterials(supabase: SupabaseServerClient, keys: string[]) {
+async function loadExistingMaterials(keys: string[]) {
   const map = new Map<string, string>();
   for (const keysChunk of chunk(keys, 500)) {
-    const result = await supabase.from("materials").select("id,r2_key").in("r2_key", keysChunk);
-    const error = result.error as DbError;
-    if (error) throw new Error(error.message);
-    for (const row of (result.data ?? []) as MaterialRow[]) if (row.r2_key) map.set(row.r2_key, row.id);
+    if (!keysChunk.length) continue;
+    const rows = await d1All<MaterialRow>(
+      `SELECT id, r2_key FROM materials WHERE r2_key IN (${keysChunk.map(() => "?").join(",")})`,
+      keysChunk,
+    );
+    for (const row of rows) if (row.r2_key) map.set(row.r2_key, row.id);
   }
   return map;
 }
 
-async function resetMaterials(supabase: SupabaseServerClient, scope: "r2" | "all") {
-  const query = supabase.from("materials").select("id");
-  const result = scope === "r2" ? await query.eq("provider", "r2") : await query;
-  const error = result.error as DbError;
-  if (error) throw new Error(error.message);
-
-  const ids = ((result.data ?? []) as Array<{ id: string }>).map((row) => row.id);
+async function resetMaterials(scope: "r2" | "all") {
+  const ids = (await d1All<{ id: string }>(
+    scope === "r2" ? "SELECT id FROM materials WHERE provider = 'r2'" : "SELECT id FROM materials",
+  )).map((row) => row.id);
   for (const idsChunk of chunk(ids, 500)) {
-    const linkDelete = await supabase.from("task_materials").delete().in("material_id", idsChunk);
-    if (linkDelete.error) throw new Error(linkDelete.error.message);
-    const materialDelete = await supabase.from("materials").delete().in("id", idsChunk);
-    if (materialDelete.error) throw new Error(materialDelete.error.message);
+    if (!idsChunk.length) continue;
+    const placeholders = idsChunk.map(() => "?").join(",");
+    await d1Run(`DELETE FROM task_materials WHERE material_id IN (${placeholders})`, idsChunk);
+    await d1Run(`DELETE FROM materials WHERE id IN (${placeholders})`, idsChunk);
   }
   return ids.length;
 }
@@ -167,7 +149,6 @@ async function resetMaterials(supabase: SupabaseServerClient, scope: "r2" | "all
 async function runImport(request: Request, fallbackBody: ImportRequest) {
   try {
     await requirePermission(request, "r2:manage");
-    const supabase = await createSupabaseServerClient();
 
     const body = request.method === "POST" ? ((await request.json().catch(() => ({}))) as ImportRequest) : fallbackBody;
     const dryRun = body.dryRun ?? request.method !== "POST";
@@ -180,13 +161,14 @@ async function runImport(request: Request, fallbackBody: ImportRequest) {
       return json({ error: `Envia confirm: "${RESET_CONFIRMATION}".`, destructiveScope: resetScope }, 400);
     }
 
-    const objects = (await listR2Objects({ root, maxItems })).filter(isImportableObject).map(toImportable);
+    const prefix = root ? `${root}/` : "";
+    const objects = await Promise.all((await listNativeR2Objects(prefix, maxItems)).filter(isImportableObject).map(toImportable));
     const sectionPaths = Array.from(new Set(objects.map((object) => object.sectionPath))).sort((a, b) => a.localeCompare(b, "es"));
 
     if (dryRun) {
       return json({
         dryRun: true,
-        bucket: getR2BucketName(),
+        bucket: "psicologia",
         root,
         scannedObjects: objects.length,
         sectionsToEnsure: sectionPaths.length,
@@ -201,16 +183,16 @@ async function runImport(request: Request, fallbackBody: ImportRequest) {
       });
     }
 
-    const deletedMaterials = reset ? await resetMaterials(supabase, resetScope) : 0;
-    const sectionMap = await loadSectionMap(supabase);
+    const deletedMaterials = reset ? await resetMaterials(resetScope) : 0;
+    const sectionMap = await loadSectionMap();
     const sectionIdByPath = new Map<string, string>();
 
     for (const sectionPath of sectionPaths) {
-      const sectionId = await ensureSectionPath(supabase, sectionMap, sectionPath);
+      const sectionId = await ensureSectionPath(sectionMap, sectionPath);
       if (sectionId) sectionIdByPath.set(cleanPath(sectionPath), sectionId);
     }
 
-    const existingMaterials = reset ? new Map<string, string>() : await loadExistingMaterials(supabase, objects.map((object) => object.key));
+    const existingMaterials = reset ? new Map<string, string>() : await loadExistingMaterials(objects.map((object) => object.key));
     let inserted = 0;
     let updated = 0;
 
@@ -223,7 +205,7 @@ async function runImport(request: Request, fallbackBody: ImportRequest) {
         provider: "r2",
         source_url: object.publicUrl,
         preview_url: object.publicUrl,
-        r2_bucket: getR2BucketName(),
+        r2_bucket: "psicologia",
         r2_key: object.key,
         file_name: object.fileName,
         content_type: object.contentType,
@@ -234,19 +216,60 @@ async function runImport(request: Request, fallbackBody: ImportRequest) {
 
       const existingId = existingMaterials.get(object.key);
       if (existingId) {
-        const { error } = await supabase.from("materials").update(payload).eq("id", existingId);
-        if (error) throw new Error(error.message);
+        await d1Run(
+          `UPDATE materials SET section_id = ?, title = ?, material_type = ?, visibility = ?, provider = ?,
+            source_url = ?, preview_url = ?, r2_bucket = ?, r2_key = ?, file_name = ?, content_type = ?,
+            size_bytes = ?, observations = ?, updated_at = ?
+           WHERE id = ?`,
+          [
+            payload.section_id,
+            payload.title,
+            payload.material_type,
+            payload.visibility,
+            payload.provider,
+            payload.source_url,
+            payload.preview_url,
+            payload.r2_bucket,
+            payload.r2_key,
+            payload.file_name,
+            payload.content_type,
+            payload.size_bytes,
+            payload.observations,
+            payload.updated_at,
+            existingId,
+          ],
+        );
         updated += 1;
       } else {
-        const { error } = await supabase.from("materials").insert(payload);
-        if (error) throw new Error(error.message);
+        await d1Run(
+          `INSERT INTO materials (id, section_id, title, material_type, visibility, provider, source_url,
+            preview_url, r2_bucket, r2_key, file_name, content_type, size_bytes, observations, updated_at)
+           VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+          [
+            crypto.randomUUID(),
+            payload.section_id,
+            payload.title,
+            payload.material_type,
+            payload.visibility,
+            payload.provider,
+            payload.source_url,
+            payload.preview_url,
+            payload.r2_bucket,
+            payload.r2_key,
+            payload.file_name,
+            payload.content_type,
+            payload.size_bytes,
+            payload.observations,
+            payload.updated_at,
+          ],
+        );
         inserted += 1;
       }
     }
 
     return json({
       dryRun: false,
-      bucket: getR2BucketName(),
+      bucket: "psicologia",
       root,
       reset,
       resetScope: reset ? resetScope : null,

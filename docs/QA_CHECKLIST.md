@@ -1,12 +1,15 @@
 # PSCV Room QA Checklist
 
-Fecha: 2026-06-18
+Fecha: 2026-06-29
 
 ## Validaciones Locales Minimas
 
 ```bash
 npm run typecheck
-$env:CI="1"; npm run build
+npm test
+npm run lint
+npm run cf:build
+npx wrangler deploy --dry-run --outdir dist
 npm run smoke
 ```
 
@@ -18,11 +21,10 @@ Si se usa `next start`, define `SMOKE_BASE_URL` contra el puerto temporal.
 $env:SMOKE_BASE_URL="https://app.rlead.xyz"; npm run smoke
 ```
 
-En preview de rama, si Vercel responde `401` en `/`, confirmar deployment `Ready` con:
+Si se prueba contra Cloudflare Access, una respuesta `401` sin sesión es esperada. Para validar datos con la misma D1 remota, usar:
 
 ```bash
-vercel ls --yes
-vercel inspect <deployment-url>
+npm run cf:dev:remote
 ```
 
 ## Flujo Alumno
@@ -40,7 +42,7 @@ vercel inspect <deployment-url>
 - `Admin > Usuarios` cambia permisos y roles.
 - `Admin > Avisos` crea broadcast y genera recordatorios.
 - `Admin > Reportes` carga tareas, materiales, alumnos y auditoria.
-- `Admin > Diagnostico` muestra Supabase, R2, destinos y biblioteca.
+- `Admin > Diagnostico` muestra D1, R2, destinos y biblioteca.
 - `Admin > Materiales` sube a R2 solo con permiso R2.
 - Importador R2 corre primero en `Simular`.
 
@@ -59,5 +61,6 @@ vercel inspect <deployment-url>
 
 - Commit creado.
 - Push a `origin`.
-- Vercel deployment `Ready`.
+- `wrangler deploy --dry-run` muestra bindings `DB` y `MATERIALS_BUCKET`.
+- Deploy de Cloudflare completado.
 - Smoke en produccion tras promover.

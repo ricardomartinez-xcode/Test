@@ -9,22 +9,22 @@ La ruta administrativa es `/gestion-academica`. Solo la puede operar un perfil `
 3. Pulsa **Crear materia**.
 4. Para conservar el historial de tareas, una materia se desactiva y reactiva; no se elimina físicamente.
 
-Las materias se guardan en `public.courses` y se pueden usar inmediatamente al crear tareas.
+Las materias se guardan en `courses` y se pueden usar inmediatamente al crear tareas.
 
-## Invitar un alumno
+## Registrar un alumno
 
 1. Completa nombre, correo y número de control opcional.
-2. Pulsa **Invitar alumno**.
-3. La aplicación crea o actualiza su fila en `public.app_profiles` y usa Supabase Auth para enviar la invitación.
-4. El alumno completa su acceso desde el correo recibido.
+2. Pulsa **Guardar alumno**.
+3. La aplicación crea o actualiza su fila en `app_profiles`.
+4. El acceso inicial se concede desde Cloudflare Access/Microsoft Entra ID; el perfil D1 define permisos y estado dentro de PSCV Room.
 
 ## Configuración de despliegue
 
-Antes de usar la invitación de alumnos:
+Antes de registrar alumnos:
 
-1. Ejecuta `db/009_academic_management.sql` en la base de datos de Supabase.
-2. En Vercel o el entorno de producción configura `SUPABASE_SERVICE_ROLE_KEY`. Es una variable solo de servidor: nunca debe llevar el prefijo `NEXT_PUBLIC_` ni exponerse en el navegador.
-3. Configura `NEXT_PUBLIC_APP_URL` con el dominio final de la aplicación.
-4. En Supabase Auth agrega `https://TU-DOMINIO/auth/callback` a las Redirect URLs y verifica que el proveedor de correo de invitaciones esté configurado.
+1. Aplica las migraciones D1 con `npx wrangler d1 migrations apply pscv-room --remote`.
+2. Configura Cloudflare Access para proteger el Worker con Microsoft Entra ID.
+3. Crea o importa el perfil owner inicial en `app_profiles`.
+4. Verifica `/api/auth/session` con una cuenta permitida por Access.
 
 El panel principal existente de **Usuarios** se mantiene para cambiar roles, permisos o activar/desactivar perfiles ya creados.

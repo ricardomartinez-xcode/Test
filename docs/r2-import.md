@@ -5,20 +5,16 @@ Este flujo convierte a Cloudflare R2 en la fuente de verdad del catálogo de mat
 ## Objetivo
 
 - R2 contiene los archivos reales.
-- Supabase guarda solo el índice consultable por la app.
-- Vercel/Next.js muestra previews y enlaces usando las keys importadas desde R2.
+- D1 guarda solo el índice consultable por la app.
+- El Worker de Cloudflare muestra previews y enlaces usando las keys importadas desde R2.
 
 Esto evita cruzar rutas heredadas de Drive o rutas manuales con objetos reales de R2.
 
-## Variables requeridas en Vercel
+## Configuración requerida en Cloudflare Workers
 
-```env
-CLOUDFLARE_R2_ENDPOINT=https://TU_ACCOUNT_ID.r2.cloudflarestorage.com
-CLOUDFLARE_R2_BUCKET=TU_BUCKET
-CLOUDFLARE_R2_ACCESS_KEY_ID=TU_ACCESS_KEY_ID
-CLOUDFLARE_R2_SECRET_ACCESS_KEY=TU_SECRET_ACCESS_KEY
-CLOUDFLARE_R2_PUBLIC_BASE_URL=https://assets.rlead.xyz
-```
+El bucket se declara en `wrangler.jsonc` como binding `MATERIALS_BUCKET`.
+
+`R2_PUBLIC_BASE_URL` es opcional. Si no existe, la app sirve preview/descarga mediante el Worker.
 
 ## Dry run
 

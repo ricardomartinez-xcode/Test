@@ -1,9 +1,9 @@
 "use client";
 
 import { useEffect, useMemo, useState } from "react";
-import { createSupabaseBrowserClient } from "@/lib/supabase/client";
+import { createD1BrowserClient } from "@/lib/d1/client";
 
-type SupabaseBrowser = NonNullable<ReturnType<typeof createSupabaseBrowserClient>>;
+type D1Browser = NonNullable<ReturnType<typeof createD1BrowserClient>>;
 type AdminTab = "general" | "tasks" | "courses" | "sections" | "materials" | "users" | "notifications" | "reports" | "diagnostics";
 type CardSize = "compact" | "medium" | "large";
 
@@ -13,7 +13,7 @@ type AdminTaskRow = { id: string; title: string; due_date: string; due_time: str
 type AppProfileRow = { id: string; email: string; full_name: string | null; control_number: string | null; role: "student" | "admin" | "owner"; active: boolean; can_edit_tasks: boolean; can_delete_tasks: boolean; can_manage_materials: boolean; can_manage_users: boolean; can_manage_settings: boolean; can_manage_group: boolean; can_manage_notifications: boolean; can_view_reports: boolean; can_manage_r2: boolean };
 type CourseDraft = Pick<CourseConfig, "name" | "shortName" | "color" | "icon" | "cardSize">;
 type StudentDraft = { controlNumber: string; email: string; fullName: string };
-type UploadDestination = { id: string; sectionId: string | null; name: string; path: string; source: "supabase" | "r2" };
+type UploadDestination = { id: string; sectionId: string | null; name: string; path: string; source: "d1" | "r2" };
 type AdminProfile = { role: "student" | "admin" | "owner"; canEditTasks: boolean; canDeleteTasks: boolean; canManageMaterials: boolean; canManageUsers: boolean; canManageSettings: boolean; canManageGroup: boolean; canManageNotifications: boolean; canViewReports: boolean; canManageR2: boolean } | null;
 type HealthPayload = { ok?: boolean; mode?: string; auth?: { configured?: boolean }; integrations?: Record<string, boolean> };
 type DestinationsPayload = { ok?: boolean; root?: string; destinations?: UploadDestination[]; error?: string };
@@ -62,7 +62,7 @@ type EmailDispatchResult = { configured: boolean; considered: number; delivered:
 type ReportPayload = { ok?: boolean; tasks?: ReportRow[]; materials?: ReportRow[]; students?: ReportRow[]; audit?: ReportRow[]; error?: string };
 type ReportRow = Record<string, string | number | boolean | null>;
 
-type AdminHubProps = { courses: CourseConfig[]; sections: SectionConfig[]; columns?: unknown[]; profile?: AdminProfile; supabase: SupabaseBrowser | null; reload: () => Promise<void>; onCourses: (courses: CourseConfig[]) => void; onSections: (sections: SectionConfig[]) => void; onError: (error: string | null) => void };
+type AdminHubProps = { courses: CourseConfig[]; sections: SectionConfig[]; columns?: unknown[]; profile?: AdminProfile; d1Client: D1Browser | null; reload: () => Promise<void>; onCourses: (courses: CourseConfig[]) => void; onSections: (sections: SectionConfig[]) => void; onError: (error: string | null) => void };
 
 const tabs: Array<{ id: AdminTab; label: string; icon: string }> = [
   { id: "general", label: "General", icon: "▣" },
@@ -76,7 +76,7 @@ const tabs: Array<{ id: AdminTab; label: string; icon: string }> = [
   { id: "diagnostics", label: "Diagnóstico", icon: "◎" },
 ];
 
-export function AdminHub({ courses, sections, profile = null, supabase, reload, onCourses, onSections, onError }: AdminHubProps) {
+export function AdminHub({ courses, sections, profile = null, d1Client, reload, onCourses, onSections, onError }: AdminHubProps) {
   const [activeTab, setActiveTab] = useState<AdminTab>("general");
   const [profiles, setProfiles] = useState<AppProfileRow[]>([]);
   const [loadingUsers, setLoadingUsers] = useState(false);
@@ -95,17 +95,17 @@ export function AdminHub({ courses, sections, profile = null, supabase, reload, 
   useEffect(() => { if (activeTab === "tasks") void loadTaskAdminData(); }, [activeTab]);
 
   async function loadProfiles() {
-    if (!supabase) return;
+    if (!d1Client) return;
     setLoadingUsers(true);
-    const { data, error } = await supabase.from("app_profiles").select("id,email,full_name,control_number,role,active,can_edit_tasks,can_delete_tasks,can_manage_materials,can_manage_users,can_manage_settings,can_manage_group,can_manage_notifications,can_view_reports,can_manage_r2").order("role").order("full_name");
+    const { data, error } = await d1Client.from("app_profiles").select("id,email,full_name,control_number,role,active,can_edit_tasks,can_delete_tasks,can_manage_materials,can_manage_users,can_manage_settings,can_manage_group,can_manage_notifications,can_view_reports,can_manage_r2").order("role").order("full_name");
     if (error) onError(error.message); else setProfiles((data ?? []) as AppProfileRow[]);
     setLoadingUsers(false);
   }
 
   async function loadTaskAdminData() {
-    if (!supabase) return;
+    if (!d1Client) return;
     setLoadingTasks(true);
-    const { data, error } = await supabase.from("tasks").select("id,title,due_date,due_time,status,priority,visible_to_students,material_url,platform_url,courses(name,color),task_types(name,color)").is("archived_at", null).order("due_date", { ascending: true }).order("due_time", { ascending: true }).limit(80);
+    const { data, error } = await d1Client.from("tasks").select("id,title,due_date,due_time,status,priority,visible_to_students,material_url,platform_url,courses(name,color),task_types(name,color)").is("archived_at", null).order("due_date", { ascending: true }).order("due_time", { ascending: true }).limit(80);
     if (error) onError(error.message); else setAdminTasks((data ?? []) as AdminTaskRow[]);
     setLoadingTasks(false);
   }
@@ -115,12 +115,12 @@ export function AdminHub({ courses, sections, profile = null, supabase, reload, 
     const shortName = input.shortName.trim() || name;
     if (!name) return false;
 
-    if (!supabase) {
+    if (!d1Client) {
       onCourses([...courses, { ...input, id: `local-course-${Date.now()}`, name, shortName, active: true }]);
       return true;
     }
 
-    const { data, error } = await supabase
+    const { data, error } = await d1Client
       .from("courses")
       .insert({
         name,
@@ -147,8 +147,8 @@ export function AdminHub({ courses, sections, profile = null, supabase, reload, 
   async function updateCourse(id: string, patch: Partial<CourseConfig>) {
     const previous = courses;
     onCourses(courses.map((course) => course.id === id ? { ...course, ...patch } : course));
-    if (!supabase) return true;
-    const { error } = await supabase.from("courses").update(toDbPatch(patch)).eq("id", id);
+    if (!d1Client) return true;
+    const { error } = await d1Client.from("courses").update(toDbPatch(patch)).eq("id", id);
     if (error) {
       onCourses(previous);
       onError(error.message);
@@ -160,8 +160,8 @@ export function AdminHub({ courses, sections, profile = null, supabase, reload, 
 
   async function updateSection(id: string, patch: Partial<SectionConfig>) {
     onSections(sections.map((section) => section.id === id ? { ...section, ...patch } : section));
-    if (!supabase) return;
-    const { error } = await supabase.from("material_sections").update(toDbPatch(patch)).eq("id", id);
+    if (!d1Client) return;
+    const { error } = await d1Client.from("material_sections").update(toDbPatch(patch)).eq("id", id);
     if (error) onError(error.message);
   }
 
@@ -188,12 +188,12 @@ export function AdminHub({ courses, sections, profile = null, supabase, reload, 
       can_manage_r2: false,
     };
 
-    if (!supabase) {
+    if (!d1Client) {
       setProfiles((current) => [...current, { ...(nextProfile as AppProfileRow), id: `local-student-${Date.now()}` }]);
       return true;
     }
 
-    const { data, error } = await supabase
+    const { data, error } = await d1Client
       .from("app_profiles")
       .insert(nextProfile)
       .select("id,email,full_name,control_number,role,active,can_edit_tasks,can_delete_tasks,can_manage_materials,can_manage_users,can_manage_settings,can_manage_group,can_manage_notifications,can_view_reports,can_manage_r2")
@@ -212,8 +212,8 @@ export function AdminHub({ courses, sections, profile = null, supabase, reload, 
   async function updateProfile(id: string, patch: Partial<AppProfileRow>) {
     const previous = profiles;
     setProfiles((current) => current.map((profile) => profile.id === id ? { ...profile, ...patch } : profile));
-    if (!supabase) return true;
-    const { error } = await supabase.from("app_profiles").update({ ...patch, updated_at: new Date().toISOString() }).eq("id", id);
+    if (!d1Client) return true;
+    const { error } = await d1Client.from("app_profiles").update({ ...patch, updated_at: new Date().toISOString() }).eq("id", id);
     if (error) {
       setProfiles(previous);
       onError(error.message);
@@ -225,7 +225,7 @@ export function AdminHub({ courses, sections, profile = null, supabase, reload, 
 
   async function updateTask(id: string, patch: Partial<Pick<AdminTaskRow, "status" | "visible_to_students" | "priority">>) {
     setAdminTasks((current) => current.map((task) => task.id === id ? { ...task, ...patch } : task));
-    if (!supabase) return;
+    if (!d1Client) return;
     const response = await fetch(`/api/admin/tasks/${id}`, {
       method: "PATCH",
       credentials: "include",
@@ -247,11 +247,11 @@ export function AdminHub({ courses, sections, profile = null, supabase, reload, 
       {activeTab === "tasks" ? <TasksPanel tasks={adminTasks} loading={loadingTasks} onReload={() => void loadTaskAdminData()} onUpdate={(id, patch) => void updateTask(id, patch)} /> : null}
       {activeTab === "courses" ? <CoursesPanel courses={courses} onCreate={(input) => createCourse(input)} onUpdate={(id, patch) => updateCourse(id, patch)} /> : null}
       {activeTab === "sections" ? <SectionsPanel sections={sections} onUpdate={(id, patch) => void updateSection(id, patch)} /> : null}
-      {activeTab === "materials" ? <MaterialUploadPanel canManageR2={Boolean(profile?.canManageR2 || profile?.role === "owner")} supabase={supabase} reload={reload} onError={onError} /> : null}
+      {activeTab === "materials" ? <MaterialUploadPanel canManageR2={Boolean(profile?.canManageR2 || profile?.role === "owner")} d1Client={d1Client} reload={reload} onError={onError} /> : null}
       {activeTab === "users" ? <UsersPanel profiles={profiles} loading={loadingUsers} canManagePermissions={profile?.role === "owner"} onCreate={(input) => createStudent(input)} onReload={() => void loadProfiles()} onUpdate={(id, patch) => updateProfile(id, patch)} /> : null}
       {activeTab === "notifications" ? <NotificationsPanel onError={onError} /> : null}
       {activeTab === "reports" ? <ReportsPanel onError={onError} /> : null}
-      {activeTab === "diagnostics" ? <DiagnosticsPanel canManageR2={Boolean(profile?.canManageR2 || profile?.role === "owner")} supabase={supabase} reload={reload} onError={onError} /> : null}
+      {activeTab === "diagnostics" ? <DiagnosticsPanel canManageR2={Boolean(profile?.canManageR2 || profile?.role === "owner")} d1Client={d1Client} reload={reload} onError={onError} /> : null}
     </div>
   );
 }
@@ -423,7 +423,7 @@ function ReportTable({ title, rows }: { title: string; rows: ReportRow[] }) {
   );
 }
 
-function DiagnosticsPanel({ canManageR2, supabase, reload, onError }: { canManageR2: boolean; supabase: SupabaseBrowser | null; reload: () => Promise<void>; onError: (error: string | null) => void }) {
+function DiagnosticsPanel({ canManageR2, d1Client, reload, onError }: { canManageR2: boolean; d1Client: D1Browser | null; reload: () => Promise<void>; onError: (error: string | null) => void }) {
   const [snapshot, setSnapshot] = useState<DiagnosticsSnapshot | null>(null);
   const [loading, setLoading] = useState(false);
   const [importBusy, setImportBusy] = useState(false);
@@ -432,7 +432,7 @@ function DiagnosticsPanel({ canManageR2, supabase, reload, onError }: { canManag
   useEffect(() => {
     void loadDiagnostics();
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [supabase]);
+  }, [d1Client]);
 
   async function loadDiagnostics() {
     setLoading(true);
@@ -441,7 +441,7 @@ function DiagnosticsPanel({ canManageR2, supabase, reload, onError }: { canManag
       safeJson<DestinationsPayload>("/api/uploads/destinations"),
       safeJson<LibraryPayload>("/api/materials/library?limit=25"),
       canManageR2 ? safeJson<R2StatusPayload>("/api/admin/r2/status") : Promise.resolve({ data: null, error: null }),
-      loadDiagnosticCounts(supabase),
+      loadDiagnosticCounts(d1Client),
     ]);
 
     setSnapshot({
@@ -483,10 +483,10 @@ function DiagnosticsPanel({ canManageR2, supabase, reload, onError }: { canManag
 
   const destinations = snapshot?.destinations?.destinations ?? [];
   const r2Destinations = destinations.filter((destination) => destination.source === "r2").length;
-  const supabaseDestinations = destinations.filter((destination) => destination.source === "supabase").length;
+  const d1Destinations = destinations.filter((destination) => destination.source === "d1").length;
   const providers = snapshot?.library?.summary?.providers ?? {};
   const r2Status = snapshot?.r2Status;
-  const healthOk = Boolean(snapshot?.health?.ok && snapshot.health.auth?.configured && snapshot.health.integrations?.supabase && snapshot.health.integrations?.r2);
+  const healthOk = Boolean(snapshot?.health?.ok && snapshot.health.auth?.configured && snapshot.health.integrations?.d1 && snapshot.health.integrations?.r2);
 
   return (
     <section className="diagnosticsLayout">
@@ -498,12 +498,12 @@ function DiagnosticsPanel({ canManageR2, supabase, reload, onError }: { canManag
         <div className="diagnosticPills">
           <DiagnosticPill label="App" ok={!snapshot?.healthError && Boolean(snapshot?.health?.ok)} />
           <DiagnosticPill label="Auth" ok={!snapshot?.healthError && Boolean(snapshot?.health?.auth?.configured)} />
-          <DiagnosticPill label="Supabase" ok={!snapshot?.healthError && Boolean(snapshot?.health?.integrations?.supabase)} />
+          <DiagnosticPill label="D1" ok={!snapshot?.healthError && Boolean(snapshot?.health?.integrations?.d1)} />
           <DiagnosticPill label="R2" ok={!snapshot?.healthError && Boolean(snapshot?.health?.integrations?.r2)} />
         </div>
         <div className="diagnosticRows">
           <DiagnosticRow label="Modo" value={snapshot?.health?.mode ?? "sin dato"} />
-          <DiagnosticRow label="Postgres directo" value={snapshot?.health?.integrations?.postgresDirect ? "activo" : "no requerido"} />
+          <DiagnosticRow label="BD" value={snapshot?.health?.integrations?.d1 ? "D1 activo" : "sin D1"} />
           <DiagnosticRow label="Resultado" value={snapshot?.healthError ?? (healthOk ? "listo" : "requiere revisión")} />
         </div>
       </article>
@@ -517,7 +517,7 @@ function DiagnosticsPanel({ canManageR2, supabase, reload, onError }: { canManag
           <DiagnosticRow label="Raíz R2" value={snapshot?.destinations?.root ?? r2Status?.root ?? "bucket root"} />
           <DiagnosticRow label="Destinos totales" value={destinations.length} />
           <DiagnosticRow label="Desde R2" value={r2Destinations} />
-          <DiagnosticRow label="Desde Supabase" value={supabaseDestinations} />
+          <DiagnosticRow label="Desde D1" value={d1Destinations} />
           <DiagnosticRow label="Materiales visibles" value={snapshot?.library?.summary?.materials ?? 0} />
           <DiagnosticRow label="Secciones visibles" value={snapshot?.library?.summary?.sections ?? 0} />
         </div>
@@ -532,7 +532,7 @@ function DiagnosticsPanel({ canManageR2, supabase, reload, onError }: { canManag
       </article>
 
       <article className="adminCard diagnosticCard">
-        <div className="adminCardHead"><div><h3>Supabase</h3><p>Conteos rápidos para detectar tablas vacías o RLS mal aplicado.</p></div></div>
+        <div className="adminCardHead"><div><h3>D1</h3><p>Conteos rápidos para detectar tablas vacías o permisos mal aplicados.</p></div></div>
         <div className="diagnosticRows">
           <DiagnosticRow label="Perfiles" value={formatCount(snapshot?.counts.profiles)} />
           <DiagnosticRow label="Tareas activas" value={formatCount(snapshot?.counts.tasks)} />
@@ -544,7 +544,7 @@ function DiagnosticsPanel({ canManageR2, supabase, reload, onError }: { canManag
       </article>
 
       <article className="adminCard diagnosticCard importer">
-        <div className="adminCardHead"><div><h3>Importador R2</h3><p>Sincroniza carpetas y archivos del bucket con Supabase.</p></div></div>
+        <div className="adminCardHead"><div><h3>Importador R2</h3><p>Sincroniza carpetas y archivos del bucket con D1.</p></div></div>
         {canManageR2 ? (
           <div className="diagnosticActions">
             <button type="button" onClick={() => void runImport(true)} disabled={importBusy}>{importBusy ? "Ejecutando..." : "Simular"}</button>
@@ -648,7 +648,7 @@ function CourseAdminRow({ course, onUpdate }: { course: CourseConfig; onUpdate: 
 
 function SectionsPanel({ sections, onUpdate }: { sections: SectionConfig[]; onUpdate: (id: string, patch: Partial<SectionConfig>) => void }) { return <section className="adminCard"><div className="adminCardHead"><div><h3>Secciones de materiales</h3><p>Personaliza carpetas y subsecciones del asset R2.</p></div></div><div className="adminRows">{sections.map((section) => <div className="adminEditRow section" key={section.id}><span className="swatch" style={{ background: section.color }} /><div className="adminNameBlock"><strong>{section.name}</strong><small>{section.path}</small></div><input aria-label="Color" type="color" value={section.color} onChange={(event) => onUpdate(section.id, { color: event.target.value })} /><input aria-label="Icono" value={section.icon} onChange={(event) => onUpdate(section.id, { icon: event.target.value })} /><select aria-label="Preview" value={section.previewStyle} onChange={(event) => onUpdate(section.id, { previewStyle: event.target.value })}><option value="none">Sin preview</option><option value="icon">Icono</option><option value="thumbnail">Miniatura</option><option value="embedded">Embebido</option></select></div>)}</div></section>; }
 
-function MaterialUploadPanel({ canManageR2, supabase, reload, onError }: { canManageR2: boolean; supabase: SupabaseBrowser | null; reload: () => Promise<void>; onError: (error: string | null) => void }) {
+function MaterialUploadPanel({ canManageR2, d1Client, reload, onError }: { canManageR2: boolean; d1Client: D1Browser | null; reload: () => Promise<void>; onError: (error: string | null) => void }) {
   const [destinations, setDestinations] = useState<UploadDestination[]>([]);
   const [destinationId, setDestinationId] = useState("");
   const [title, setTitle] = useState("");
@@ -694,26 +694,27 @@ function MaterialUploadPanel({ canManageR2, supabase, reload, onError }: { canMa
       onError("Tu perfil no tiene permiso para subir archivos a R2.");
       return;
     }
-    if (!file || !destination || destination.source !== "r2" || !supabase) {
+    if (!file || !destination || destination.source !== "r2" || !d1Client) {
       onError("Selecciona un archivo y una carpeta válida del bucket.");
       return;
     }
 
     setBusy(true);
     try {
-      const response = await fetch("/api/uploads/presign", {
+      const formData = new FormData();
+      formData.set("file", file);
+      formData.set("fileName", file.name);
+      formData.set("sectionPath", destination.path);
+
+      const response = await fetch("/api/uploads/direct", {
         method: "POST",
         credentials: "include",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ fileName: file.name, contentType: file.type || "application/octet-stream", sectionPath: destination.path }),
+        body: formData,
       });
-      const body = await response.json() as { key?: string; uploadUrl?: string; publicUrl?: string | null; error?: string };
-      if (!response.ok || !body.uploadUrl || !body.key) throw new Error(body.error ?? "No se pudo preparar la subida.");
+      const body = await response.json() as { key?: string; publicUrl?: string | null; error?: string };
+      if (!response.ok || !body.key) throw new Error(body.error ?? "No se pudo subir el archivo.");
 
-      const upload = await fetch(body.uploadUrl, { method: "PUT", headers: { "Content-Type": file.type || "application/octet-stream" }, body: file });
-      if (!upload.ok) throw new Error("R2 rechazó el archivo.");
-
-      const { error } = await supabase.from("materials").insert({
+      const { error } = await d1Client.from("materials").insert({
         section_id: destination.sectionId,
         title: title || file.name,
         file_name: file.name,
@@ -741,7 +742,7 @@ function MaterialUploadPanel({ canManageR2, supabase, reload, onError }: { canMa
 
   return (
     <section className="adminCard">
-      <div className="adminCardHead"><div><h3>Subir material</h3><p>Guarda el archivo en R2 y registra la metadata en Supabase.</p></div></div>
+      <div className="adminCardHead"><div><h3>Subir material</h3><p>Guarda el archivo en R2 y registra la metadata en D1.</p></div></div>
       <form className="adminUpload" onSubmit={submit}>
         <label>
           Destino
@@ -881,16 +882,16 @@ async function safeJson<T>(url: string) {
   }
 }
 
-async function loadDiagnosticCounts(supabase: SupabaseBrowser | null): Promise<{ counts: DiagnosticCounts; errors: string[] }> {
+async function loadDiagnosticCounts(d1Client: D1Browser | null): Promise<{ counts: DiagnosticCounts; errors: string[] }> {
   const counts: DiagnosticCounts = { profiles: null, tasks: null, materials: null, sections: null, groupColumns: null };
-  if (!supabase) return { counts, errors: ["Supabase no está configurado en el navegador."] };
+  if (!d1Client) return { counts, errors: ["D1 no está configurado en el navegador."] };
 
   const queries = [
-    { key: "profiles", label: "Perfiles", query: supabase.from("app_profiles").select("id", { count: "exact", head: true }) },
-    { key: "tasks", label: "Tareas", query: supabase.from("tasks").select("id", { count: "exact", head: true }).is("archived_at", null) },
-    { key: "materials", label: "Materiales", query: supabase.from("materials").select("id", { count: "exact", head: true }) },
-    { key: "sections", label: "Secciones", query: supabase.from("material_sections").select("id", { count: "exact", head: true }).eq("active", true) },
-    { key: "groupColumns", label: "Columnas grupo", query: supabase.from("group_columns").select("id", { count: "exact", head: true }).eq("active", true) },
+    { key: "profiles", label: "Perfiles", query: d1Client.from("app_profiles").select("id", { count: "exact", head: true }) },
+    { key: "tasks", label: "Tareas", query: d1Client.from("tasks").select("id", { count: "exact", head: true }).is("archived_at", null) },
+    { key: "materials", label: "Materiales", query: d1Client.from("materials").select("id", { count: "exact", head: true }) },
+    { key: "sections", label: "Secciones", query: d1Client.from("material_sections").select("id", { count: "exact", head: true }).eq("active", true) },
+    { key: "groupColumns", label: "Columnas grupo", query: d1Client.from("group_columns").select("id", { count: "exact", head: true }).eq("active", true) },
   ] as const;
 
   const results = await Promise.all(queries.map(async (item) => ({ ...item, result: await item.query })));

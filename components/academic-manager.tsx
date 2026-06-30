@@ -2,7 +2,7 @@
 
 import { FormEvent, useCallback, useEffect, useMemo, useState } from "react";
 import Link from "next/link";
-import { createSupabaseBrowserClient } from "@/lib/supabase/client";
+import { createD1BrowserClient } from "@/lib/d1/client";
 import styles from "./academic-manager.module.css";
 
 type CardSize = "compact" | "medium" | "large";
@@ -49,7 +49,7 @@ function courseSort(a: Course, b: Course) {
 }
 
 export function AcademicManager() {
-  const supabase = useMemo(() => createSupabaseBrowserClient(), []);
+  const d1Client = useMemo(() => createD1BrowserClient(), []);
   const [profile, setProfile] = useState<ManagerProfile | null>(null);
   const [courses, setCourses] = useState<Course[]>([]);
   const [students, setStudents] = useState<Student[]>([]);
@@ -74,8 +74,8 @@ export function AcademicManager() {
   }, []);
 
   const bootstrap = useCallback(async () => {
-    if (!supabase) {
-      setNotice({ tone: "error", message: "Supabase no está configurado en este entorno." });
+    if (!d1Client) {
+      setNotice({ tone: "error", message: "D1 no está configurado en este entorno." });
       setLoading(false);
       return;
     }
@@ -85,20 +85,20 @@ export function AcademicManager() {
       const {
         data: { user },
         error: userError,
-      } = await supabase.auth.getUser();
+      } = await d1Client.auth.getUser();
       if (userError || !user) throw new Error("Inicia sesión para abrir la gestión académica.");
 
-      const { data: profileData, error: profileError } = await supabase
+      const { data: profileData, error: profileError } = await d1Client
         .from("app_profiles")
         .select("id,email,role,active,can_manage_settings,can_manage_users")
-        .or(`auth_user_id.eq.${user.id},email.eq.${user.email?.toLowerCase() ?? ""}`)
+        .eq("id", user.id)
         .maybeSingle();
       if (profileError || !profileData) throw new Error("No se encontró tu perfil administrativo.");
 
       const manager = profileData as ManagerProfile;
       setProfile(manager);
 
-      const { data: courseData, error: courseError } = await supabase
+      const { data: courseData, error: courseError } = await d1Client
         .from("courses")
         .select("id,name,short_name,color,icon,card_size,active,sort_order")
         .order("sort_order", { ascending: true })
@@ -117,7 +117,7 @@ export function AcademicManager() {
     } finally {
       setLoading(false);
     }
-  }, [loadStudents, supabase]);
+  }, [loadStudents, d1Client]);
 
   useEffect(() => {
     void bootstrap();
@@ -125,7 +125,7 @@ export function AcademicManager() {
 
   async function createCourse(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
-    if (!supabase || !canManageCourses) return;
+    if (!d1Client || !canManageCourses) return;
 
     const name = courseForm.name.trim();
     if (!name) {
@@ -137,7 +137,7 @@ export function AcademicManager() {
     setNotice(null);
     try {
       const nextSortOrder = courses.reduce((maximum, course) => Math.max(maximum, course.sort_order ?? 0), 0) + 1;
-      const { data, error } = await supabase
+      const { data, error } = await d1Client
         .from("courses")
         .insert({
           name,
@@ -163,10 +163,10 @@ export function AcademicManager() {
   }
 
   async function toggleCourse(course: Course) {
-    if (!supabase || !canManageCourses) return;
+    if (!d1Client || !canManageCourses) return;
 
     setNotice(null);
-    const { error } = await supabase
+    const { error } = await d1Client
       .from("courses")
       .update({ active: !course.active, updated_at: new Date().toISOString() })
       .eq("id", course.id);
@@ -194,15 +194,15 @@ export function AcademicManager() {
         body: JSON.stringify(studentForm),
       });
       const payload = (await response.json().catch(() => ({}))) as { student?: Student; message?: string; error?: string };
-      if (!response.ok) throw new Error(payload.error ?? "No se pudo invitar al alumno.");
+      if (!response.ok) throw new Error(payload.error ?? "No se pudo guardar al alumno.");
 
       if (payload.student) {
         setStudents((current) => [payload.student!, ...current].sort((a, b) => a.full_name?.localeCompare(b.full_name ?? "", "es") ?? 0));
       }
       setStudentForm(INITIAL_STUDENT);
-      setNotice({ tone: "success", message: payload.message ?? "Invitación enviada al alumno." });
+      setNotice({ tone: "success", message: payload.message ?? "Alumno guardado en D1." });
     } catch (error) {
-      setNotice({ tone: "error", message: error instanceof Error ? error.message : "No se pudo invitar al alumno." });
+      setNotice({ tone: "error", message: error instanceof Error ? error.message : "No se pudo guardar al alumno." });
     } finally {
       setStudentBusy(false);
     }
@@ -215,7 +215,7 @@ export function AcademicManager() {
           <div>
             <p className={styles.eyebrow}>PSCV Room · Administración</p>
             <h1>Materias y alumnos</h1>
-            <p className={styles.lead}>Crea materias, invita alumnos por correo y consulta el directorio del grupo.</p>
+            <p className={styles.lead}>Crea materias, registra alumnos y consulta el directorio del grupo.</p>
           </div>
           <Link className={styles.backLink} href="/">Volver al espacio</Link>
         </header>
@@ -362,11 +362,11 @@ export function AcademicManager() {
                     />
                   </label>
                   <button className={styles.primaryButton} type="submit" disabled={studentBusy}>
-                    {studentBusy ? "Enviando invitación…" : "Invitar alumno"}
+                    {studentBusy ? "Guardando alumno…" : "Guardar alumno"}
                   </button>
                 </form>
               ) : (
-                <p className={styles.muted}>Tu perfil no tiene permiso para invitar alumnos.</p>
+                <p className={styles.muted}>Tu perfil no tiene permiso para registrar alumnos.</p>
               )}
 
               <div className={styles.studentList}>

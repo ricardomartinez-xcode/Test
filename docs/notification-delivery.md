@@ -14,15 +14,15 @@ La entrega nativa de este cambio funciona mientras la aplicación está abierta.
 
 ## Correo de anuncios
 
-Al publicar un anuncio desde Administración > Avisos, PSCV Room guarda primero las notificaciones en Supabase y después intenta enviar correo únicamente a usuarios activos que hayan activado el canal de correo y no hayan deshabilitado esa categoría.
+Al publicar un anuncio desde Administración > Avisos, PSCV Room guarda primero las notificaciones en D1 y después intenta enviar correo únicamente a usuarios activos que hayan activado el canal de correo y no hayan deshabilitado esa categoría.
 
-Configura estas variables solo en el servidor (por ejemplo, Vercel):
+Configura estas variables como secretos del Worker:
 
 ```bash
 RESEND_API_KEY=re_...
 EMAIL_FROM="PSCV Room <avisos@tu-dominio.mx>"
 ```
 
-También se necesita `SUPABASE_SERVICE_ROLE_KEY`, ya utilizada para operaciones seguras de administración. No expongas ninguna de estas variables con el prefijo `NEXT_PUBLIC_`.
+No expongas ninguna de estas variables al navegador.
 
 En Resend, verifica el dominio usado por `EMAIL_FROM` antes de enviar a estudiantes. La respuesta del endpoint de avisos incluye un resumen técnico de correos enviados, omitidos o con error para diagnóstico.

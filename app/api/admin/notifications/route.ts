@@ -3,7 +3,7 @@ import { z } from "zod";
 import { errorResponse, requirePermission } from "@/lib/server/authz";
 import { deliverAnnouncementEmails, type AnnouncementNotification } from "@/lib/server/notification-email";
 import { groupAdminNotifications, type AdminNotificationRow } from "@/lib/server/notification-groups";
-import { createSupabaseServerClient } from "@/lib/supabase/server";
+import { d1All, d1Run } from "@/lib/server/d1-data";
 
 const notificationSchema = z.object({
   title: z.string().trim().min(1),
@@ -21,18 +21,15 @@ type ProfileTarget = {
 export async function GET(request: Request) {
   try {
     await requirePermission(request, "notifications:manage");
-    const supabase = await createSupabaseServerClient();
-    const { data, error } = await supabase
-      .from("notifications")
-      .select("id,profile_id,kind,priority,title,body,entity,entity_id,read_at,dismissed_at,created_at")
-      .order("created_at", { ascending: false })
-      .limit(500);
-
-    if (error) throw new Error(error.message);
-    return NextResponse.json(
-      { ok: true, notifications: groupAdminNotifications((data ?? []) as AdminNotificationRow[]) },
-      { headers: { "Cache-Control": "no-store" } },
+    const data = await d1All<AdminNotificationRow>(
+      `SELECT id, profile_id, kind, priority, title, body, entity, entity_id, read_at, dismissed_at, created_at
+       FROM notifications
+       ORDER BY created_at DESC
+       LIMIT 500`,
     );
+    return NextResponse.json({ ok: true, notifications: groupAdminNotifications(data) }, {
+      headers: { "Cache-Control": "no-store" },
+    });
   } catch (error) {
     return errorResponse(error);
   }
@@ -41,46 +38,35 @@ export async function GET(request: Request) {
 export async function POST(request: Request) {
   try {
     const profile = await requirePermission(request, "notifications:manage");
-    const supabase = await createSupabaseServerClient();
     const body = notificationSchema.parse(await request.json());
+    const where = body.audience === "students"
+      ? "WHERE active = 1 AND role = 'student'"
+      : body.audience === "admins"
+        ? "WHERE active = 1 AND role IN ('admin', 'owner')"
+        : "WHERE active = 1";
+    const targets = await d1All<ProfileTarget>(`SELECT id, role FROM app_profiles ${where}`);
 
-    let targetsQuery = supabase
-      .from("app_profiles")
-      .select("id,role")
-      .eq("active", true);
-
-    if (body.audience === "students") targetsQuery = targetsQuery.eq("role", "student");
-    if (body.audience === "admins") targetsQuery = targetsQuery.in("role", ["admin", "owner"]);
-
-    const targets = await targetsQuery;
-    if (targets.error) throw new Error(targets.error.message);
-
-    const rows = ((targets.data ?? []) as ProfileTarget[]).map((target) => ({
+    const rows: AnnouncementNotification[] = targets.map((target) => ({
+      id: crypto.randomUUID(),
       profile_id: target.id,
       kind: body.kind,
       priority: body.priority,
       title: body.title,
       body: body.body,
-      entity: "broadcast",
-      entity_id: body.audience,
-      created_by: profile.id,
+      action_url: null,
     }));
 
-    if (!rows.length) {
-      return NextResponse.json({
-        ok: true,
-        inserted: 0,
-        email: { configured: false, considered: 0, delivered: 0, skipped: 0, failed: 0, errors: [] },
-      });
+    for (const row of rows) {
+      await d1Run(
+        `INSERT INTO notifications (id, profile_id, kind, priority, title, body, entity, entity_id, created_by)
+         VALUES (?, ?, ?, ?, ?, ?, 'broadcast', ?, ?)`,
+        [row.id, row.profile_id, row.kind, row.priority, row.title, row.body, body.audience, profile.id],
+      );
     }
 
-    const { data: insertedRows, error } = await supabase
-      .from("notifications")
-      .insert(rows)
-      .select("id,profile_id,kind,priority,title,body,action_url");
-    if (error) throw new Error(error.message);
+    if (!rows.length) return NextResponse.json({ ok: true, inserted: 0, email: { configured: false, considered: 0, delivered: 0, skipped: 0, failed: 0, errors: [] } });
 
-    const email = await deliverAnnouncementEmails((insertedRows ?? []) as AnnouncementNotification[]);
+    const email = await deliverAnnouncementEmails(rows);
     return NextResponse.json({ ok: true, inserted: rows.length, email });
   } catch (error) {
     return errorResponse(error);

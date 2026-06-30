@@ -2,18 +2,28 @@
 
 ## Modo demo
 
-Sin `DATABASE_URL`, la app usa datos semilla y `localStorage`. Sirve para probar UI, flujo admin/lectura y diseño.
+Sin binding D1 disponible, la app usa datos semilla y `localStorage`. Sirve para probar UI, flujo admin/lectura y diseño.
 
 ## Modo producción
 
-La app usa Supabase para auth, datos y RLS. `DATABASE_URL` solo queda para rutas legacy o herramientas directas.
+La app usa Cloudflare Access para identidad y D1 para datos. El dominio publicado es:
+
+```txt
+https://pscv-room.rlead.xyz
+```
+
+Para probar contra la misma base remota del despliegue:
+
+```bash
+npm run cf:dev:remote
+```
 
 Endpoints incluidos:
 
 ```txt
 GET  /api/health
 GET  /api/tasks
-POST /api/uploads/presign
+POST /api/uploads/direct
 GET  /api/notifications
 GET  /api/reports/operations
 GET  /api/admin/r2/status
@@ -21,16 +31,14 @@ GET  /api/admin/r2/status
 
 ## R2
 
-El endpoint `/api/uploads/presign` devuelve una URL prefirmada para subir archivos directo al bucket. Requiere sesion y permiso `r2:manage`.
+El endpoint `/api/uploads/direct` recibe `FormData` y guarda el archivo con el binding `MATERIALS_BUCKET`. Requiere sesion y permiso `r2:manage`. No se requieren claves S3/R2 para este flujo porque el Worker usa el binding nativo.
 
 Flujo recomendado:
 
 ```txt
 UI selecciona archivo
   ↓
-POST /api/uploads/presign
-  ↓
-PUT directo a R2 con uploadUrl
+POST /api/uploads/direct
   ↓
 Guardar metadata en materials
 ```
@@ -40,8 +48,7 @@ Guardar metadata en materials
 Implementado en la fase operativa:
 
 - autenticación,
-- RLS en tablas publicas,
-- permisos por perfil admin,
+- permisos por perfil admin en D1,
 - protección de APIs admin,
 - auditoría en `audit_log`,
 - borrado lógico de tareas,

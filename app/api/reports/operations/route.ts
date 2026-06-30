@@ -1,29 +1,23 @@
 import { NextResponse } from "next/server";
 import { errorResponse, requirePermission } from "@/lib/server/authz";
-import { createSupabaseServerClient } from "@/lib/supabase/server";
+import { d1All } from "@/lib/server/d1-data";
 
 export async function GET(request: Request) {
   try {
     await requirePermission(request, "reports:view");
-    const supabase = await createSupabaseServerClient();
-
     const [tasks, materials, students, audit] = await Promise.all([
-      supabase.from("report_task_summary").select("*").order("course").order("delivery_type"),
-      supabase.from("report_material_summary").select("*").order("section_path"),
-      supabase.from("report_student_followup").select("*").order("active_flags", { ascending: false }).limit(80),
-      supabase.from("audit_log").select("id,actor_id,action,entity,entity_id,created_at").order("created_at", { ascending: false }).limit(40),
+      d1All<Record<string, unknown>>("SELECT * FROM report_task_summary ORDER BY course, task_type"),
+      d1All<Record<string, unknown>>("SELECT * FROM report_material_summary ORDER BY section_path"),
+      d1All<Record<string, unknown>>(
+        `SELECT role, active, COUNT(*) AS total
+         FROM app_profiles
+         GROUP BY role, active
+         ORDER BY active DESC, role ASC`,
+      ),
+      d1All<Record<string, unknown>>("SELECT id, actor_id, action, entity, entity_id, created_at FROM audit_log ORDER BY created_at DESC LIMIT 40"),
     ]);
 
-    const failure = tasks.error || materials.error || students.error || audit.error;
-    if (failure) throw new Error(failure.message);
-
-    return NextResponse.json({
-      ok: true,
-      tasks: tasks.data ?? [],
-      materials: materials.data ?? [],
-      students: students.data ?? [],
-      audit: audit.data ?? [],
-    });
+    return NextResponse.json({ ok: true, tasks, materials, students, audit });
   } catch (error) {
     return errorResponse(error);
   }

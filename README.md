@@ -8,7 +8,7 @@ Convertir el sistema actual de tareas, materiales, calendario y seguimiento en u
 
 - Panel de lectura para alumnos.
 - Panel admin para crear, editar, entregar y cancelar tareas.
-- Modelo preparado para Postgres.
+- Modelo operativo en Cloudflare D1.
 - Subida/descarga de archivos preparada para Cloudflare R2.
 - Migración gradual desde Google Sheets.
 - Auditoría, permisos y columnas internas separadas de la UI.
@@ -18,9 +18,9 @@ Convertir el sistema actual de tareas, materiales, calendario y seguimiento en u
 La recomendación para producción es:
 
 ```txt
-Next.js / Vercel
+Next.js / Cloudflare Workers
   ↓
-Postgres: tareas, usuarios, materias, estados, auditoría
+D1: tareas, usuarios, materias, estados, auditoría
   ↓
 Cloudflare R2: archivos pesados, PDFs, presentaciones, materiales
   ↓
@@ -34,9 +34,10 @@ Sheets funcionó bien para prototipo, pero no debe ser la fuente principal cuand
 - Next.js App Router
 - React + TypeScript
 - CSS nativo minimalista
-- API routes listas para Postgres y R2
+- API routes listas para D1 y R2
 - Modo demo con datos semilla si no hay base de datos
-- Supabase Auth/RLS para permisos reales
+- Cloudflare Access + Microsoft para identidad
+- Autorización por perfil en D1
 - Notificaciones persistentes y reportes operativos
 
 ## Ejecutar localmente
@@ -49,7 +50,7 @@ npm run dev
 Abre:
 
 ```txt
-http://localhost:3000
+http://localhost:8788
 ```
 
 ## Variables de entorno
@@ -60,23 +61,31 @@ Copia `.env.example` a `.env.local`.
 cp .env.example .env.local
 ```
 
-Para demo no necesitas variables.
+`npm run dev` compila OpenNext y ejecuta `wrangler dev --remote --port 8788`, usando la misma D1/R2 que el despliegue de Cloudflare.
 
-Para producción:
+```bash
+npm run dev
+```
+
+Para producción, los bindings principales viven en `wrangler.jsonc`: `DB` para D1 y `MATERIALS_BUCKET` para R2. El dominio protegido por Cloudflare Access es:
+
+```txt
+https://pscv-room.rlead.xyz
+```
+
+Si quieres generar URLs públicas directas para materiales, configura:
 
 ```env
-DATABASE_URL="postgres://..."
-CLOUDFLARE_R2_ENDPOINT="https://<account-id>.r2.cloudflarestorage.com"
-CLOUDFLARE_R2_ACCESS_KEY_ID="..."
-CLOUDFLARE_R2_SECRET_ACCESS_KEY="..."
-CLOUDFLARE_R2_BUCKET="psicologia"
-CLOUDFLARE_R2_PUBLIC_BASE_URL="https://pub-fb23330311304d9685253700280f0a85.r2.dev"
+R2_PUBLIC_BASE_URL="https://pub-fb23330311304d9685253700280f0a85.r2.dev"
 ```
 
 ## Scripts
 
 ```bash
 npm run dev
+npm run next:dev
+npm run cf:dev
+npm run cf:dev:remote
 npm run build
 npm run smoke
 npm run start
@@ -85,7 +94,7 @@ npm run typecheck
 
 ## Operacion
 
-El runbook de deploy, variables Vercel, R2, Supabase y recuperacion esta en:
+El runbook de deploy, variables Cloudflare, R2, D1 y recuperacion esta en:
 
 ```txt
 docs/OPERATIONS_RUNBOOK.md
@@ -94,6 +103,7 @@ docs/OPERATIONS_RUNBOOK.md
 Guias de cierre:
 
 ```txt
+docs/MIGRATION_STATUS.md
 docs/QA_CHECKLIST.md
 docs/USER_GUIDE.md
 ```
@@ -104,13 +114,13 @@ docs/USER_GUIDE.md
 app/                  UI y API routes
 components/           Componentes de interfaz
 lib/                  Tipos, seed y utilidades
-db/schema.sql         Esquema SQL recomendado
+migrations/           Migraciones Cloudflare D1
 docs/                 Arquitectura y migración
 ```
 
 ## Estado actual
 
-- Datos operativos en Supabase.
+- Datos operativos en Cloudflare D1.
 - Archivos en Cloudflare R2.
 - Permisos por perfil admin.
 - Auditoria y reportes disponibles en Admin.

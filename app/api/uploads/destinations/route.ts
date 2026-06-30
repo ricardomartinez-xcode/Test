@@ -1,7 +1,7 @@
 import { NextResponse } from "next/server";
 import { isGeneratedR2FolderPath, MATERIALS_R2_ROOT, normalizeMaterialR2Key } from "@/lib/server/r2-paths";
-import { hasR2Config, listR2FolderPrefixes } from "@/lib/server/r2";
-import { createSupabaseServerClient } from "@/lib/supabase/server";
+import { listNativeR2FolderPrefixes } from "@/lib/server/r2-native";
+import { d1All } from "@/lib/server/d1-data";
 
 type SectionRow = {
   id: string;
@@ -28,49 +28,46 @@ function destinationKey(path: string) {
 
 export async function GET() {
   const sectionsByPath = new Map<string, SectionRow>();
-
-  try {
-    const supabase = await createSupabaseServerClient();
-    const { data, error } = await supabase
-      .from("material_sections")
-      .select("id,name,path,sort_order")
-      .eq("active", true)
-      .order("sort_order", { ascending: true });
-
-    if (error) throw error;
-
-    for (const section of (data ?? []) as SectionRow[]) {
-      const key = destinationKey(section.path);
-      if (key) sectionsByPath.set(key, section);
-    }
-  } catch {
-    // Demo/local mode can run without Supabase env vars; bucket folders still drive destinations.
-  }
-
   const destinations = new Map<string, UploadDestination>();
 
-  if (hasR2Config()) {
-    try {
-      const folders = await listR2FolderPrefixes({ root: MATERIALS_R2_ROOT });
-      for (const folder of folders) {
-        const path = normalizeMaterialR2Key(folder);
-        if (!path || isGeneratedR2FolderPath(path)) continue;
-        const key = destinationKey(path);
-        const section = sectionsByPath.get(key);
+  try {
+    const sections = await d1All<SectionRow>(
+      "SELECT id, name, path, sort_order FROM material_sections WHERE active = 1 ORDER BY sort_order ASC",
+    );
+    for (const section of sections) {
+      const key = destinationKey(section.path);
+      if (key) {
+        sectionsByPath.set(key, section);
         destinations.set(key, {
-          id: `r2:${path}`,
-          sectionId: section?.id ?? null,
-          name: section?.name ?? labelFromPath(path),
-          path,
+          id: `r2:${section.path}`,
+          sectionId: section.id,
+          name: section.name,
+          path: section.path,
           source: "r2",
         });
       }
-    } catch (error) {
-      return NextResponse.json(
-        { ok: false, error: error instanceof Error ? error.message : "No se pudieron leer destinos R2." },
-        { status: 500 },
-      );
     }
+  } catch {
+    // Demo/local mode can run without D1; bucket folders still drive destinations.
+  }
+
+  try {
+    const folders = await listNativeR2FolderPrefixes(MATERIALS_R2_ROOT);
+    for (const folder of folders) {
+      const path = normalizeMaterialR2Key(folder);
+      if (!path || isGeneratedR2FolderPath(path)) continue;
+      const key = destinationKey(path);
+      const section = sectionsByPath.get(key);
+      destinations.set(key, {
+        id: `r2:${path}`,
+        sectionId: section?.id ?? null,
+        name: section?.name ?? labelFromPath(path),
+        path,
+        source: "r2",
+      });
+    }
+  } catch {
+    // D1 sections remain valid upload destinations even when the bucket is empty.
   }
 
   return NextResponse.json({

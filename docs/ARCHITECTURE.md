@@ -9,7 +9,7 @@ Next.js UI
   ↓
 API Routes / Server Actions
   ↓
-Postgres
+Cloudflare D1
   ↓
 Cloudflare R2 para archivos
 ```
@@ -31,9 +31,9 @@ Sheets es excelente para prototipos y edición manual, pero se vuelve frágil cu
 
 En el sistema actual, la app depende de fórmulas como `Días restantes` y `Visible lectura`. Eso funciona, pero si una fórmula se rompe o una columna cambia, la UI también se rompe.
 
-## Postgres
+## Cloudflare D1
 
-Postgres debe guardar datos estructurados:
+Cloudflare D1 guarda datos estructurados:
 
 - usuarios,
 - materias,
@@ -44,7 +44,7 @@ Postgres debe guardar datos estructurados:
 - auditoría,
 - sincronización de calendario.
 
-Esto permite filtros reales, constraints, índices, vistas, historial y consultas confiables.
+Esto permite filtros reales, constraints, indices, vistas, historial y consultas confiables dentro del mismo despliegue de Cloudflare.
 
 ## R2
 
@@ -72,7 +72,7 @@ owner:
   puede administrar usuarios, catálogos y configuración
 ```
 
-En este MVP aún no se activa login. El repo deja la base preparada para agregar Auth.js, Supabase Auth, Clerk o Google OAuth.
+La identidad se valida con Cloudflare Access y Microsoft Entra ID. La autorizacion de la app vive en `app_profiles` dentro de D1.
 
 ## Regla de visibilidad 2.0
 

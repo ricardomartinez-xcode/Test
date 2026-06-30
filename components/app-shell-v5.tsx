@@ -32,10 +32,10 @@ import { MaterialLibrary } from "@/components/material-library";
 import { NotificationSettingsPanel } from "@/components/providers";
 import type { DeliveryType, GroupMember, Role, Task, TaskStatus } from "@/lib/domain";
 import { deliveryTypes, statuses } from "@/lib/domain";
-import { createSupabaseBrowserClient, hasSupabaseBrowserConfig } from "@/lib/supabase/client";
+import { createD1BrowserClient, hasD1BrowserConfig } from "@/lib/d1/client";
 import { calculateDaysRemaining, deriveReaderVisibility, deriveStatus, sortTasks } from "@/lib/task-utils";
 
-type SupabaseBrowser = NonNullable<ReturnType<typeof createSupabaseBrowserClient>>;
+type D1Browser = NonNullable<ReturnType<typeof createD1BrowserClient>>;
 type Tab = "calendar" | "tasks" | "materials" | "completed" | "group" | "admin" | "prefs" | "taskDetail";
 type CardSize = "compact" | "medium" | "large";
 type DetailOrigin = Exclude<Tab, "taskDetail">;
@@ -206,7 +206,7 @@ const fallbackPrefs: UserPreferences = {
   theme: "system",
 };
 
-const hasSupabaseConfig = hasSupabaseBrowserConfig();
+const hasD1Config = hasD1BrowserConfig();
 
 const demoProfile: Profile = {
   id: "local-demo-admin",
@@ -274,10 +274,10 @@ function newTaskForm(defaults: Partial<TaskForm> = {}): TaskForm {
 }
 
 export function AppShellV5({ initialTasks, initialMembers }: Props) {
-  const supabase = useMemo(() => createSupabaseBrowserClient(), []);
-  const [ready, setReady] = useState(!hasSupabaseConfig);
-  const [email, setEmail] = useState<string | null>(hasSupabaseConfig ? null : demoProfile.email);
-  const [profile, setProfile] = useState<Profile | null>(hasSupabaseConfig ? null : demoProfile);
+  const d1Client = useMemo(() => createD1BrowserClient(), []);
+  const [ready, setReady] = useState(!hasD1Config);
+  const [email, setEmail] = useState<string | null>(hasD1Config ? null : demoProfile.email);
+  const [profile, setProfile] = useState<Profile | null>(hasD1Config ? null : demoProfile);
   const [tab, setTab] = useState<Tab>("calendar");
   const [drawerOpen, setDrawerOpen] = useState(false);
   const [searchOpen, setSearchOpen] = useState(false);
@@ -287,9 +287,9 @@ export function AppShellV5({ initialTasks, initialMembers }: Props) {
   const [notificationOpen, setNotificationOpen] = useState(false);
   const [notificationView, setNotificationView] = useState<"notifications" | "settings">("notifications");
   const [tasks, setTasks] = useState<UiTask[]>(initialTasks);
-  const [courses, setCourses] = useState<CourseConfig[]>(hasSupabaseConfig ? [] : demoCourses);
-  const [sections, setSections] = useState<SectionConfig[]>(hasSupabaseConfig ? [] : demoSections);
-  const [taskTypes, setTaskTypes] = useState<TaskTypeConfig[]>(hasSupabaseConfig ? [] : demoTaskTypes);
+  const [courses, setCourses] = useState<CourseConfig[]>(hasD1Config ? [] : demoCourses);
+  const [sections, setSections] = useState<SectionConfig[]>(hasD1Config ? [] : demoSections);
+  const [taskTypes, setTaskTypes] = useState<TaskTypeConfig[]>(hasD1Config ? [] : demoTaskTypes);
   const [members, setMembers] = useState<UiGroupMember[]>(initialMembers);
   const [cursor, setCursor] = useState(new Date());
   const [selectedTaskId, setSelectedTaskId] = useState<string | null>(initialTasks[0]?.id ?? null);
@@ -304,20 +304,20 @@ export function AppShellV5({ initialTasks, initialMembers }: Props) {
   const canEditTasks = Boolean(profile?.role === "owner" || (profile?.role === "admin" && profile.canEditTasks));
 
   useEffect(() => {
-    if (!supabase) {
+    if (!d1Client) {
       setReady(true);
       return;
     }
     let mounted = true;
 
-    supabase.auth.getSession().then(({ data, error: sessionError }) => {
+    d1Client.auth.getSession().then(({ data, error: sessionError }) => {
       if (!mounted) return;
       if (sessionError) setError(sessionError.message);
-      setEmail(data.session?.user.email ?? null);
+      setEmail(data?.session?.user.email ?? null);
       setReady(true);
     });
 
-    const { data } = supabase.auth.onAuthStateChange((_event, session) => {
+    const { data } = d1Client.auth.onAuthStateChange((_event, session) => {
       setEmail(session?.user.email ?? null);
       setReady(true);
     });
@@ -326,20 +326,20 @@ export function AppShellV5({ initialTasks, initialMembers }: Props) {
       mounted = false;
       data.subscription.unsubscribe();
     };
-  }, [supabase]);
+  }, [d1Client]);
 
   useEffect(() => {
-    if (supabase && email) void loadData(supabase, email);
-  }, [supabase, email]);
+    if (d1Client && email) void loadData(d1Client, email);
+  }, [d1Client, email]);
 
   useEffect(() => {
-    if (supabase && profile) void loadNotifications();
-    if (!supabase) setNotifications([]);
+    if (d1Client && profile) void loadNotifications();
+    if (!d1Client) setNotifications([]);
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [supabase, profile?.id]);
+  }, [d1Client, profile?.id]);
 
   useEffect(() => {
-    if (!supabase || !profile) return;
+    if (!d1Client || !profile) return;
     const refreshNotifications = () => {
       void loadNotifications();
     };
@@ -351,9 +351,9 @@ export function AppShellV5({ initialTasks, initialMembers }: Props) {
       window.clearInterval(intervalId);
     };
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [supabase, profile?.id]);
+  }, [d1Client, profile?.id]);
 
-  async function loadData(client: SupabaseBrowser, accountEmail: string) {
+  async function loadData(client: D1Browser, accountEmail: string) {
     setError(null);
     const normalized = accountEmail.toLowerCase();
     const [profileRes, coursesRes, sectionsRes, tasksRes, membersRes] = await Promise.all([
@@ -392,7 +392,7 @@ export function AppShellV5({ initialTasks, initialMembers }: Props) {
   }
 
   async function signOut() {
-    if (supabase) await supabase.auth.signOut();
+    if (d1Client) await d1Client.auth.signOut();
     setEmail(null);
     setProfile(null);
     setNotifications([]);
@@ -460,7 +460,7 @@ export function AppShellV5({ initialTasks, initialMembers }: Props) {
     setCreatingTask(true);
     setError(null);
 
-    if (!supabase) {
+    if (!d1Client) {
       const course = courses.find((item) => item.id === form.courseId);
       const type = taskTypes.find((item) => item.id === form.typeId);
       const id = `local-${Date.now()}`;
@@ -525,7 +525,7 @@ export function AppShellV5({ initialTasks, initialMembers }: Props) {
           setError(linkError instanceof Error ? linkError.message : "No se pudo enlazar el material.");
         }
       }
-      if (email) await loadData(supabase, email);
+      if (email) await loadData(d1Client, email);
       setSelectedTaskId(taskId);
       setTaskFormOpen(false);
       if (body.calendarError) setError(`Tarea creada; calendario pendiente: ${body.calendarError}`);
@@ -553,7 +553,7 @@ export function AppShellV5({ initialTasks, initialMembers }: Props) {
 
     setError(null);
 
-    if (!supabase) {
+    if (!d1Client) {
       const course = courses.find((item) => item.id === form.courseId);
       const type = taskTypes.find((item) => item.id === form.typeId);
       const dueDate = form.dueDate || new Date().toISOString().slice(0, 10);
@@ -605,7 +605,7 @@ export function AppShellV5({ initialTasks, initialMembers }: Props) {
       const body = await response.json().catch(() => ({})) as { error?: string; calendarError?: string | null };
       if (!response.ok) throw new Error(body.error ?? "No se pudo guardar la tarea.");
       if (form.materialId) await linkTaskMaterial(id, form.materialId);
-      if (email) await loadData(supabase, email);
+      if (email) await loadData(d1Client, email);
       if (body.calendarError) setError(`Tarea guardada; calendario pendiente: ${body.calendarError}`);
       return true;
     } catch (saveError) {
@@ -615,7 +615,7 @@ export function AppShellV5({ initialTasks, initialMembers }: Props) {
   }
 
   async function markDone(id: string) {
-    if (!supabase || !canEditTasks) return;
+    if (!d1Client || !canEditTasks) return;
     const response = await fetch(`/api/admin/tasks/${id}`, {
       method: "PATCH",
       credentials: "include",
@@ -625,7 +625,7 @@ export function AppShellV5({ initialTasks, initialMembers }: Props) {
     const body = await response.json().catch(() => ({})) as { error?: string; calendarError?: string | null };
     if (!response.ok) setError(body.error ?? "No se pudo marcar como entregada.");
     else {
-      if (email) await loadData(supabase, email);
+      if (email) await loadData(d1Client, email);
       if (body.calendarError) setError(`Tarea entregada; calendario pendiente: ${body.calendarError}`);
     }
   }
@@ -638,7 +638,7 @@ export function AppShellV5({ initialTasks, initialMembers }: Props) {
     );
   }
 
-  if (!email && !supabase) {
+  if (!email && !d1Client) {
     return (
       <main className="loginScreen authPage">
         <section className="loginCard authCard authCardSimple">
@@ -700,8 +700,8 @@ export function AppShellV5({ initialTasks, initialMembers }: Props) {
   }
 
   function refreshCurrentData() {
-    if (!email || !supabase) return;
-    void Promise.all([loadData(supabase, email), loadNotifications()]);
+    if (!email || !d1Client) return;
+    void Promise.all([loadData(d1Client, email), loadNotifications()]);
   }
 
   return (
@@ -741,7 +741,7 @@ export function AppShellV5({ initialTasks, initialMembers }: Props) {
         email={email ?? ""}
         role={role}
         active={activeNavTab}
-        sourceLabel={supabase ? "Supabase conectado" : "Demo local"}
+        sourceLabel={d1Client ? "D1 conectado" : "Demo local"}
         onClose={() => setDrawerOpen(false)}
         onSelect={go}
         onSignOut={signOut}
@@ -778,16 +778,16 @@ export function AppShellV5({ initialTasks, initialMembers }: Props) {
         ) : null}
         {tab === "materials" ? <MaterialLibrary previewSize={prefs.materialPreviewSize} globalQuery={query} /> : null}
         {tab === "completed" ? <TaskList tasks={completedTasks} role="reader" selectedTask={null} density={prefs.taskDensity} onSelect={(id) => openTaskDetail(id, "completed")} onDone={() => undefined} completedOnly /> : null}
-        {tab === "group" ? <Group members={members} supabase={supabase} role={role} profile={profile} onError={setError} /> : null}
-        {tab === "prefs" ? <Preferences profile={profile} supabase={supabase} onProfile={setProfile} onError={setError} /> : null}
+        {tab === "group" ? <Group members={members} d1Client={d1Client} role={role} profile={profile} onError={setError} /> : null}
+        {tab === "prefs" ? <Preferences profile={profile} d1Client={d1Client} onProfile={setProfile} onError={setError} /> : null}
         {tab === "taskDetail" ? <TaskDetailScreen task={selectedTask} canEdit={canEditTasks} courses={courses} taskTypes={taskTypes} onBack={() => go(detailOrigin)} onDone={(id) => void markDone(id)} onSave={(id, form) => updateTaskFromDetail(id, form)} /> : null}
         {tab === "admin" ? (
           <AdminHub
             courses={courses}
             sections={sections}
             profile={profile}
-            supabase={supabase}
-            reload={() => email && supabase ? loadData(supabase, email) : Promise.resolve()}
+            d1Client={d1Client}
+            reload={() => email && d1Client ? loadData(d1Client, email) : Promise.resolve()}
             onCourses={setCourses}
             onSections={setSections}
             onError={setError}
@@ -1414,7 +1414,7 @@ function TaskCreateModal({
   );
 }
 
-function Group({ members, supabase, role, profile, onError }: { members: UiGroupMember[]; supabase: SupabaseBrowser | null; role: Role; profile: Profile | null; onError: (error: string | null) => void }) {
+function Group({ members, d1Client, role, profile, onError }: { members: UiGroupMember[]; d1Client: D1Browser | null; role: Role; profile: Profile | null; onError: (error: string | null) => void }) {
   const [columns, setColumns] = useState<BooleanGroupColumn[]>(fixedBooleanColumns);
   const [values, setValues] = useState<GroupValueStore>({});
   const [newColumnLabel, setNewColumnLabel] = useState("");
@@ -1424,20 +1424,20 @@ function Group({ members, supabase, role, profile, onError }: { members: UiGroup
   const [usingRemote, setUsingRemote] = useState(false);
 
   const loadGroupConfig = useCallback(async () => {
-    if (supabase && role === "admin") {
+    if (d1Client && role === "admin") {
       const [columnRes, valueRes] = await Promise.all([
-        supabase
+        d1Client
           .from("group_columns")
           .select("id,source_key,label,fixed,sort_order")
           .eq("active", true)
           .order("sort_order"),
-        supabase
+        d1Client
           .from("group_column_values")
           .select("profile_id,column_id,value"),
       ]);
 
       if (!columnRes.error && !valueRes.error) {
-        const remoteColumns = (columnRes.data ?? []).map((row) => toGroupColumn(row as GroupColumnRow));
+        const remoteColumns = ((columnRes.data ?? []) as unknown[]).map((row) => toGroupColumn(row as GroupColumnRow));
         setColumns(remoteColumns.length ? remoteColumns : fixedBooleanColumns);
         setValues(toGroupValueStore((valueRes.data ?? []) as GroupValueRow[]));
         setUsingRemote(true);
@@ -1466,7 +1466,7 @@ function Group({ members, supabase, role, profile, onError }: { members: UiGroup
       setUsingRemote(false);
       setStorageReady(true);
     }
-  }, [onError, role, supabase]);
+  }, [onError, role, d1Client]);
 
   useEffect(() => {
     void loadGroupConfig();
@@ -1482,8 +1482,8 @@ function Group({ members, supabase, role, profile, onError }: { members: UiGroup
     if (!label) return;
     const sortOrder = Math.max(0, ...columns.map((column) => column.sortOrder ?? 0)) + 10;
 
-    if (usingRemote && supabase) {
-      const { data, error } = await supabase
+    if (usingRemote && d1Client) {
+      const { data, error } = await d1Client
         .from("group_columns")
         .insert({ label, sort_order: sortOrder, created_by: profile?.id ?? null })
         .select("id,source_key,label,fixed,sort_order")
@@ -1508,8 +1508,8 @@ function Group({ members, supabase, role, profile, onError }: { members: UiGroup
   async function saveColumnLabel(id: string) {
     const label = editingLabel.trim();
     if (label) {
-      if (usingRemote && supabase) {
-        const { error } = await supabase
+      if (usingRemote && d1Client) {
+        const { error } = await d1Client
           .from("group_columns")
           .update({ label, updated_at: new Date().toISOString() })
           .eq("id", id);
@@ -1530,8 +1530,8 @@ function Group({ members, supabase, role, profile, onError }: { members: UiGroup
     const column = columns.find((item) => item.id === id);
     if (column?.fixed) return;
 
-    if (usingRemote && supabase) {
-      const { error } = await supabase
+    if (usingRemote && d1Client) {
+      const { error } = await d1Client
         .from("group_columns")
         .update({ active: false, updated_at: new Date().toISOString() })
         .eq("id", id);
@@ -1574,8 +1574,8 @@ function Group({ members, supabase, role, profile, onError }: { members: UiGroup
       },
     }));
 
-    if (usingRemote && supabase && member.profileId) {
-      const { error } = await supabase
+    if (usingRemote && d1Client && member.profileId) {
+      const { error } = await d1Client
         .from("group_column_values")
         .upsert({
           profile_id: member.profileId,
@@ -1602,7 +1602,7 @@ function Group({ members, supabase, role, profile, onError }: { members: UiGroup
       <section className="groupToolbar">
         <div>
           <strong>Lista de grupo</strong>
-          <span>{members.length} alumnos · {usingRemote ? "Sincronizada en Supabase" : "Demo local"}</span>
+          <span>{members.length} alumnos · {usingRemote ? "Sincronizada en D1" : "Demo local"}</span>
         </div>
         <label>
           <input value={newColumnLabel} onChange={(event) => setNewColumnLabel(event.target.value)} onKeyDown={(event) => { if (event.key === "Enter") void addColumn(); }} placeholder="Nuevo encabezado" />
@@ -1663,19 +1663,19 @@ function Group({ members, supabase, role, profile, onError }: { members: UiGroup
   );
 }
 
-function Preferences({ profile, supabase, onProfile, onError }: { profile: Profile | null; supabase: SupabaseBrowser | null; onProfile: (profile: Profile | null) => void; onError: (error: string | null) => void }) {
+function Preferences({ profile, d1Client, onProfile, onError }: { profile: Profile | null; d1Client: D1Browser | null; onProfile: (profile: Profile | null) => void; onError: (error: string | null) => void }) {
   const prefs = profile?.preferences ?? fallbackPrefs;
 
   async function update<K extends keyof UserPreferences>(key: K, value: UserPreferences[K]) {
     const next = { ...prefs, [key]: value };
     if (profile) onProfile({ ...profile, preferences: next });
-    if (supabase && profile) {
-      const { error } = await supabase
+    if (d1Client && profile) {
+      const { error } = await d1Client
         .from("app_profiles")
         .update({ preferences: next, updated_at: new Date().toISOString() })
         .eq("id", profile.id);
       if (error) {
-        const fallback = await supabase.rpc("update_my_preferences", { preferences_input: next });
+        const fallback = await d1Client.rpc("update_my_preferences", { preferences_input: next });
         if (fallback.error) onError(fallback.error.message);
       }
     }

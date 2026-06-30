@@ -1,8 +1,8 @@
 import { NextResponse } from "next/server";
 import { selectBucketMaterialSections } from "@/lib/server/material-sections";
-import { createPublicR2Url, listR2FolderPrefixes } from "@/lib/server/r2";
+import { createNativePublicR2Url, listNativeR2FolderPrefixes } from "@/lib/server/r2-native";
 import { MATERIALS_R2_ROOT, materialSectionPathFromR2Key, normalizeMaterialR2Key } from "@/lib/server/r2-paths";
-import { createSupabaseServerClient } from "@/lib/supabase/server";
+import { d1All } from "@/lib/server/d1-data";
 
 type SectionRow = {
   id: string;
@@ -40,8 +40,8 @@ function sectionKey(value: string) {
   return normalizeMaterialR2Key(value).toLocaleLowerCase("es");
 }
 
-function withR2Urls(row: MaterialRow, sectionsByPath: Map<string, SectionRow>) {
-  const publicR2Url = createPublicR2Url(row.r2_key);
+async function withR2Urls(row: MaterialRow, sectionsByPath: Map<string, SectionRow>) {
+  const publicR2Url = await createNativePublicR2Url(row.r2_key);
   const signedPreviewUrl = row.r2_key ? `/api/materials/${row.id}/file?mode=preview` : null;
   const signedDownloadUrl = row.r2_key ? `/api/materials/${row.id}/file?mode=download` : null;
   const joinedSection = firstSection(row.material_sections);
@@ -68,52 +68,69 @@ export async function GET(request: Request) {
     const sectionId = requestUrl.searchParams.get("sectionId")?.trim();
     const limit = Math.min(Number(requestUrl.searchParams.get("limit") ?? 300), 500);
 
-    const supabase = await createSupabaseServerClient();
+    const sectionsResult = await d1All<SectionRow>(
+      "SELECT id, name, path, color, icon, card_size, preview_style, sort_order FROM material_sections WHERE active = 1 ORDER BY sort_order ASC",
+    );
+    let folderPaths: string[] = [];
+    try {
+      folderPaths = await listNativeR2FolderPrefixes(MATERIALS_R2_ROOT);
+    } catch {
+      folderPaths = [];
+    }
 
-    const [sectionsResult, folderPaths] = await Promise.all([
-      supabase
-        .from("material_sections")
-        .select("id,name,path,color,icon,card_size,preview_style,sort_order")
-        .eq("active", true)
-        .order("sort_order", { ascending: true }),
-      listR2FolderPrefixes({ root: MATERIALS_R2_ROOT }),
-    ]);
-
-    let materialsQuery = supabase
-      .from("materials")
-      .select(
-        "id,title,material_type,provider,source_url,preview_url,thumbnail_url,r2_key,file_name,content_type,size_bytes,section_id,material_sections(id,name,path,color,icon,card_size,preview_style,sort_order)",
-      )
-      .eq("visibility", "visible")
-      .not("r2_key", "is", null)
-      .order("title", { ascending: true })
-      .limit(limit);
-
+    const where: string[] = ["m.visibility = 'visible'", "m.r2_key IS NOT NULL"];
+    const values: unknown[] = [];
     if (sectionId) {
-      materialsQuery = materialsQuery.eq("section_id", sectionId);
+      where.push("m.section_id = ?");
+      values.push(sectionId);
     }
-
     if (query) {
-      const safeQuery = query.replace(/[%_]/g, "\\$&");
-      materialsQuery = materialsQuery.or(
-        `title.ilike.%${safeQuery}%,file_name.ilike.%${safeQuery}%,observations.ilike.%${safeQuery}%`,
-      );
+      const like = `%${query.replace(/[%_]/g, "\\$&")}%`;
+      where.push("(m.title LIKE ? ESCAPE '\\' OR m.file_name LIKE ? ESCAPE '\\' OR m.observations LIKE ? ESCAPE '\\')");
+      values.push(like, like, like);
     }
+    values.push(limit);
+    const materialsResult = await d1All<MaterialRow & {
+      material_section_id: string | null;
+      joined_section_id: string | null;
+      section_name: string | null;
+      section_path: string | null;
+      section_color: string | null;
+      section_icon: string | null;
+      section_card_size: string | null;
+      section_preview_style: string | null;
+      section_sort_order: number | null;
+    }>(
+      `SELECT m.id, m.title, m.material_type, m.provider, m.source_url, m.preview_url, m.thumbnail_url,
+        m.r2_key, m.file_name, m.content_type, m.size_bytes, m.section_id AS material_section_id,
+        ms.id AS joined_section_id, ms.name AS section_name, ms.path AS section_path, ms.color AS section_color,
+        ms.icon AS section_icon, ms.card_size AS section_card_size, ms.preview_style AS section_preview_style,
+        ms.sort_order AS section_sort_order
+       FROM materials m
+       LEFT JOIN material_sections ms ON ms.id = m.section_id
+       WHERE ${where.join(" AND ")}
+       ORDER BY m.title ASC
+       LIMIT ?`,
+      values,
+    );
 
-    const materialsResult = await materialsQuery;
-
-    if (sectionsResult.error) {
-      return NextResponse.json({ error: sectionsResult.error.message }, { status: 500 });
-    }
-
-    if (materialsResult.error) {
-      return NextResponse.json({ error: materialsResult.error.message }, { status: 500 });
-    }
-
-    const sections = selectBucketMaterialSections(folderPaths, (sectionsResult.data ?? []) as SectionRow[]);
+    const sections = folderPaths.length ? selectBucketMaterialSections(folderPaths, sectionsResult) : sectionsResult;
     const sectionsByPath = new Map(sections.map((section) => [sectionKey(section.path), section]));
-    const materials = ((materialsResult.data ?? []) as MaterialRow[])
-      .map((row) => withR2Urls(row, sectionsByPath));
+    const materials = await Promise.all(materialsResult
+      .map((row) => withR2Urls({
+        ...row,
+        section_id: row.material_section_id,
+        material_sections: row.joined_section_id ? {
+          id: row.joined_section_id,
+          name: row.section_name ?? "",
+          path: row.section_path ?? "",
+          color: row.section_color,
+          icon: row.section_icon,
+          card_size: row.section_card_size,
+          preview_style: row.section_preview_style,
+          sort_order: row.section_sort_order,
+        } : null,
+      }, sectionsByPath)));
 
     const countsBySection = materials.reduce<Record<string, number>>((obj, material) => {
       if (!material.section_id) return obj;
@@ -141,7 +158,7 @@ export async function GET(request: Request) {
       materials,
     });
   } catch (error) {
-    if (error instanceof Error && error.message.includes("Missing Supabase env vars")) {
+    if (error instanceof Error && error.message.includes("Missing env var")) {
       return NextResponse.json({
         ok: true,
         query: "",

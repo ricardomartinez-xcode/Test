@@ -3,7 +3,7 @@
 import { useEffect, useMemo, useState } from "react";
 import { ExternalLink, Eye, FileText, LayoutGrid, List } from "lucide-react";
 import { seedMaterials } from "@/lib/seed";
-import { hasSupabaseBrowserConfig } from "@/lib/supabase/client";
+import { hasD1BrowserConfig } from "@/lib/d1/client";
 
 type PreviewSize = "small" | "medium" | "large";
 
@@ -56,7 +56,7 @@ type MaterialLibraryProps = {
 };
 
 const allSectionId = "all";
-const hasSupabaseConfig = hasSupabaseBrowserConfig();
+const hasD1Config = hasD1BrowserConfig();
 
 export function MaterialLibrary({ previewSize, globalQuery = "" }: MaterialLibraryProps) {
   const [data, setData] = useState<LibraryResponse | null>(null);
@@ -83,7 +83,7 @@ export function MaterialLibrary({ previewSize, globalQuery = "" }: MaterialLibra
   }, [query, sectionId]); // eslint-disable-line react-hooks/exhaustive-deps -- query and section changes own the reload lifecycle.
 
   async function loadLibrary(signal?: AbortSignal) {
-    if (!hasSupabaseConfig) {
+    if (!hasD1Config) {
       setLoading(false);
       setError(null);
       setData(buildDemoLibrary(query, allSectionId));

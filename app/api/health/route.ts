@@ -1,21 +1,36 @@
 import { NextResponse } from "next/server";
 import { hasDatabase } from "@/lib/server/db";
-import { hasR2Config } from "@/lib/server/r2";
+import { getCloudflareEnv, getMaterialsBucket } from "@/lib/server/cloudflare";
 
 export async function GET() {
-  const databaseAvailable = await hasDatabase();
+  const database = await hasDatabase();
+  let r2Binding = false;
+  try {
+    await getMaterialsBucket();
+    r2Binding = true;
+  } catch {
+    r2Binding = false;
+  }
+  let authConfigured = false;
+  try {
+    const env = await getCloudflareEnv();
+    authConfigured = env.AUTH_MODE === "development"
+      ? Boolean(env.DEV_AUTH_EMAIL)
+      : Boolean(env.ACCESS_TEAM_DOMAIN && env.ACCESS_AUD);
+  } catch {
+    authConfigured = false;
+  }
   return NextResponse.json({
     ok: true,
     app: "PSCV Room 2.0",
-    mode: databaseAvailable ? "database" : "demo",
+    mode: database ? "database" : "demo",
     auth: {
-      provider: "supabase-azure-microsoft",
-      configured: Boolean(process.env.NEXT_PUBLIC_SUPABASE_URL && (process.env.NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY || process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY)),
+      provider: "cloudflare-access-microsoft",
+      configured: authConfigured,
     },
     integrations: {
-      supabase: Boolean(process.env.NEXT_PUBLIC_SUPABASE_URL),
-      postgresDirect: databaseAvailable,
-      r2: hasR2Config(),
+      d1: database,
+      r2: r2Binding,
       sheetsLegacy: Boolean(process.env.GOOGLE_SHEETS_SPREADSHEET_ID),
     },
   });

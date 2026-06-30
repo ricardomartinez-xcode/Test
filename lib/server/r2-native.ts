@@ -1,13 +1,59 @@
 import { getCloudflareEnv, getMaterialsBucket } from "@/lib/server/cloudflare";
 import { normalizeMaterialR2Key } from "@/lib/server/r2-paths";
 
+export type NativeR2ListedObject = {
+  key: string;
+  size: number;
+  lastModified: Date | null;
+  etag: string | null;
+};
+
 function publicUrl(baseUrl: string | undefined, key: string) {
   const base = baseUrl?.trim().replace(/\/$/, "");
   if (!base) return null;
   return `${base}/${key.split("/").map(encodeURIComponent).join("/")}`;
 }
 
-export async function listNativeR2Objects(prefix = "", limit = 1000) {
+function unique(values: Array<string | null | undefined>) {
+  return Array.from(new Set(values.map((value) => value?.trim() ?? "").filter(Boolean)));
+}
+
+function safeDecode(value: string) {
+  try {
+    return decodeURIComponent(value);
+  } catch {
+    return value;
+  }
+}
+
+function parentPrefix(key: string) {
+  const parts = key.split("/").filter(Boolean);
+  parts.pop();
+  return parts.length ? `${parts.join("/")}/` : "";
+}
+
+function basename(key: string) {
+  return key.split("/").filter(Boolean).pop() ?? key;
+}
+
+function comparable(value: string | null | undefined) {
+  return (value ?? "")
+    .normalize("NFD")
+    .replace(/[\u0300-\u036f]/g, "")
+    .toLowerCase()
+    .replace(/[^a-z0-9]+/g, " ")
+    .trim()
+    .replace(/\s+/g, " ");
+}
+
+export async function createNativePublicR2Url(key: string | null | undefined) {
+  const normalizedKey = normalizeMaterialR2Key(key);
+  if (!normalizedKey) return null;
+  const env = await getCloudflareEnv();
+  return publicUrl(env.R2_PUBLIC_BASE_URL, normalizedKey);
+}
+
+export async function listNativeR2Objects(prefix = "", limit = 1000): Promise<NativeR2ListedObject[]> {
   const bucket = await getMaterialsBucket();
   const objects: Array<{ key: string; size: number; lastModified: Date; etag: string }> = [];
   let cursor: string | undefined;
@@ -19,13 +65,32 @@ export async function listNativeR2Objects(prefix = "", limit = 1000) {
   return objects;
 }
 
+export async function listNativeR2FolderPrefixes(prefix = "", limit = 50000) {
+  const root = normalizeMaterialR2Key(prefix);
+  const rootPrefix = root ? `${root}/` : "";
+  const folders = new Set<string>();
+  const objects = await listNativeR2Objects(rootPrefix, limit);
+
+  if (root) folders.add(root);
+  for (const object of objects) {
+    const parts = object.key.split("/").filter(Boolean);
+    parts.pop();
+    let current = "";
+    for (const part of parts) {
+      current = current ? `${current}/${part}` : part;
+      if (!root || current === root || current.startsWith(rootPrefix)) folders.add(current);
+    }
+  }
+
+  return Array.from(folders).sort((a, b) => a.localeCompare(b, "es"));
+}
+
 export async function putNativeR2Object(input: { key: string; body: ReadableStream | ArrayBuffer | string; contentType?: string; contentDisposition?: string }) {
   const bucket = await getMaterialsBucket();
   const key = normalizeMaterialR2Key(input.key);
   if (!key) throw new Error("Clave R2 inválida.");
   await bucket.put(key, input.body, { httpMetadata: { contentType: input.contentType, contentDisposition: input.contentDisposition } });
-  const env = await getCloudflareEnv();
-  return { key, publicUrl: publicUrl(env.R2_PUBLIC_BASE_URL, key) };
+  return { key, publicUrl: await createNativePublicR2Url(key) };
 }
 
 export async function getNativeR2Object(key: string) {
@@ -33,6 +98,46 @@ export async function getNativeR2Object(key: string) {
   const normalizedKey = normalizeMaterialR2Key(key);
   if (!normalizedKey) return null;
   return bucket.get(normalizedKey);
+}
+
+export async function resolveNativeR2ObjectKey(input: { key: string; fileName?: string | null; title?: string | null }) {
+  const decodedKey = safeDecode(input.key);
+  const normalizedKey = normalizeMaterialR2Key(decodedKey);
+  const exactCandidates = unique([
+    input.key,
+    decodedKey,
+    normalizeMaterialR2Key(input.key),
+    normalizedKey,
+    normalizedKey.normalize("NFC"),
+    normalizedKey.normalize("NFD"),
+  ]);
+
+  for (const candidate of exactCandidates) {
+    if (await getNativeR2Object(candidate)) return candidate;
+  }
+
+  const targetNames = unique([
+    basename(input.key),
+    basename(decodedKey),
+    basename(normalizedKey),
+    input.fileName ?? undefined,
+    input.title ?? undefined,
+  ]).map(comparable).filter(Boolean);
+
+  const prefixes = Array.from(new Set([
+    parentPrefix(normalizedKey),
+    parentPrefix(decodedKey),
+  ].map((value) => value.trim()).filter(Boolean)));
+
+  for (const prefix of prefixes) {
+    const objects = await listNativeR2Objects(prefix, 10000);
+    for (const object of objects) {
+      if (exactCandidates.includes(object.key)) return object.key;
+      if (targetNames.includes(comparable(basename(object.key)))) return object.key;
+    }
+  }
+
+  throw new Error(`No se encontró el objeto R2. Key intentada: ${normalizedKey}`);
 }
 
 export async function deleteNativeR2Object(key: string) {

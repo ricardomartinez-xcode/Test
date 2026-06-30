@@ -1,182 +1,156 @@
 # PSCV Room Operations Runbook
 
-Fecha: 2026-06-23
+Fecha: 2026-06-29
 
 ## Ambientes
 
-- Produccion: `https://app.rlead.xyz`
-- Vercel project: `relead/pscvroom`
-- Rama de producción: `main`
-- Supabase project ref: `luygjtmggthhxzxlfkbq`
-- R2 bucket: `psicologia`
-- R2 S3 API: `https://41ffa6a1a7c184fd4308f87780a62cc4.r2.cloudflarestorage.com/psicologia`
-- R2 public dev URL: `https://pub-fb23330311304d9685253700280f0a85.r2.dev`
-- R2 catalog URI: `https://catalog.cloudflarestorage.com/41ffa6a1a7c184fd4308f87780a62cc4/psicologia`
+- Produccion: Cloudflare Worker `pscv-room`
+- Base de datos: Cloudflare D1 `pscv-room`
+- Bucket de materiales: Cloudflare R2 `psicologia`
+- Identidad: Cloudflare Access con Microsoft Entra ID
 
-## Deploy
+## Desarrollo contra la misma base remota
 
-1. Hacer commit por bloque funcional.
-2. Empujar la rama:
+Para probar localmente con los bindings reales de Cloudflare:
 
 ```bash
-git push origin main
+npm run cf:dev:remote
 ```
 
-3. Confirmar que Vercel termina en `Ready`:
+Ese comando compila con OpenNext y levanta `wrangler dev --remote`, por lo que las rutas usan la D1 remota configurada en `wrangler.jsonc`.
+
+Para una sesion local sin Access, carga variables de desarrollo y usa:
 
 ```bash
-vercel ls --yes
-vercel inspect <deployment-url> --logs
+AUTH_MODE=development
+ALLOW_DEV_AUTH=1
+DEV_AUTH_EMAIL=<email-existente-en-app_profiles>
 ```
 
-4. Validar produccion con smoke cuando el cambio toque rutas, R2 o auth. Los previews pueden responder `401` si Vercel Deployment Protection esta activo; en ese caso basta confirmar `Ready` y correr smoke al promover a produccion:
+`ALLOW_DEV_AUTH=1` es solo para desarrollo.
+
+## D1
+
+El esquema vive en `migrations/`:
+
+- `0001_pscv_room.sql`: esquema base operativo.
+- `0002_seed_defaults.sql`: catalogos iniciales de materias, tipos, secciones y columnas de grupo.
+
+Aplicar migraciones remotas:
 
 ```bash
-$env:SMOKE_BASE_URL="https://app.rlead.xyz"; npm run smoke
+npx wrangler d1 migrations apply pscv-room --remote
 ```
 
-## Variables Vercel
+Verificar datos base:
 
-Estado observado con `vercel env ls` el 2026-06-18.
-
-Variables presentes en Preview y Production:
-
-- `CLOUDFLARE_R2_ACCESS_KEY_ID`
-- `CLOUDFLARE_R2_SECRET_ACCESS_KEY`
-- `CLOUDFLARE_R2_ENDPOINT`
-- `CLOUDFLARE_R2_BUCKET`
-- `CLOUDFLARE_R2_PUBLIC_BASE_URL`
-- `NEXT_PUBLIC_APP_URL`
-
-Variables presentes solo en Production:
-
-- `NEXT_PUBLIC_SUPABASE_URL`
-- `NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY`
-- `NEXT_PUBLIC_SUPABASE_ANON_KEY`
-- `SUPABASE_URL`
-- `SUPABASE_ANON_KEY`
-- `SUPABASE_PUBLISHABLE_KEY`
-- `SUPABASE_SERVICE_ROLE_KEY`
-- `SUPABASE_SECRET_KEY`
-- `SUPABASE_JWT_SECRET`
-- `POSTGRES_URL`
-- `POSTGRES_PRISMA_URL`
-- `POSTGRES_URL_NON_POOLING`
-- `POSTGRES_USER`
-- `POSTGRES_HOST`
-- `POSTGRES_PASSWORD`
-- `POSTGRES_DATABASE`
-Si se quiere probar login, datos reales y diagnostico Supabase en previews de rama, copiar las variables `NEXT_PUBLIC_SUPABASE_*` y las variables Supabase necesarias tambien a Preview. `DATABASE_URL` no esta listado; las rutas principales usan Supabase, pero la ruta legacy `/api/tasks` lo requiere si se usa Postgres directo.
-
-## R2
-
-Configuracion recomendada:
-
-```env
-CLOUDFLARE_R2_ENDPOINT="https://41ffa6a1a7c184fd4308f87780a62cc4.r2.cloudflarestorage.com/psicologia"
-CLOUDFLARE_R2_BUCKET="psicologia"
-CLOUDFLARE_R2_PUBLIC_BASE_URL="https://pub-fb23330311304d9685253700280f0a85.r2.dev"
+```bash
+npx wrangler d1 execute pscv-room --remote --command "SELECT COUNT(*) AS total FROM material_sections;"
 ```
 
-La app normaliza el endpoint y usa rutas internas firmadas para preview/descarga:
+Tablas principales:
 
-- Preview: `/api/materials/<id>/file?mode=preview`
-- Descarga: `/api/materials/<id>/file?mode=download`
-
-Para diagnosticar R2 desde la UI:
-
-1. Entrar como admin.
-2. Abrir `Admin > Diagnostico`.
-3. Revisar `R2`, `Destinos totales`, `Materiales visibles`.
-4. Usar `Simular` antes de `Sincronizar R2`.
-
-## Supabase
-
-Migraciones aplicadas o requeridas por esta fase:
-
-- `db/001_pscvroom_evolution.sql`
-- `db/002_group_columns.sql`
-- `db/003_material_sections_timestamps.sql`
-- `db/004_production_operations.sql`
-- `db/005_tighten_authenticated_grants.sql`
-- `db/006_restore_public_material_read_grants.sql`
-- `db/007_task_change_notifications.sql`
-- `db/008_fix_permission_email_fallback.sql`
-- `db/009_academic_management.sql`
-- `db/010_owner_only_profile_permissions.sql`
-- `db/011_microsoft_calendar_sync.sql`
-- `db/012_normalize_material_sections.sql`
-- `db/013_remove_microsoft_calendar_sync.sql`
-
-La seccion `Preferencias` guarda preferencias por usuario en `app_profiles.preferences`; el admin no controla la vista global de todos. La lista de grupo usa:
-
+- `app_profiles`
+- `courses`
+- `task_types`
+- `tasks`
+- `material_sections`
+- `materials`
+- `task_materials`
 - `group_columns`
 - `group_column_values`
-
-La operacion actual tambien usa:
-
 - `notification_preferences`
 - `notifications`
 - `audit_log`
-- vistas `report_task_summary`, `report_material_summary`, `report_student_followup`
 
-Permisos admin por perfil:
+Vistas de reportes:
 
-- `can_edit_tasks`, `can_delete_tasks`
-- `can_manage_materials`, `can_manage_r2`
-- `can_manage_users`, `can_manage_settings`, `can_manage_group`
-- `can_manage_notifications`, `can_view_reports`
+- `report_task_summary`
+- `report_material_summary`
+- `report_student_followup`
 
-## Pruebas Minimas
+## R2
 
-Antes de empujar cambios grandes:
+El Worker usa el binding `MATERIALS_BUCKET` para listar, subir, importar y servir archivos desde el bucket `psicologia`. No se requieren claves S3 para el flujo normal.
+
+Variable opcional para generar URLs públicas directas:
+
+```env
+R2_PUBLIC_BASE_URL="https://<public-r2-base-url>"
+```
+
+Si no se configura, la app sirve preview/descarga mediante `/api/materials/<id>/file` usando el binding R2.
+
+Rutas internas:
+
+- Preview: `/api/materials/<id>/file?mode=preview`
+- Descarga: `/api/materials/<id>/file?mode=download`
+- Upload directo por Worker: `POST /api/uploads/direct`
+
+## Deploy
+
+1. Verificar localmente:
 
 ```bash
+npm run typecheck
 npm test
 npm run lint
-npm run build
-npm run typecheck
+npm run cf:build
+npx wrangler deploy --dry-run --outdir dist
 ```
 
-Para revisar endpoints desplegados:
+2. Aplicar migraciones pendientes:
 
 ```bash
-$env:SMOKE_BASE_URL="https://app.rlead.xyz"; npm run smoke
+npx wrangler d1 migrations apply pscv-room --remote
 ```
 
-El smoke valida render inicial, health, tareas, destinos R2, forma de URLs de materiales y proteccion de rutas operativas.
-
-## Cierre por Fases
-
-- Fase 1 QA funcional: usar `npm run typecheck`, `npm run build` y `npm run smoke`.
-- Fase 2 datos: revisar `Admin > Diagnostico`, conteos Supabase y vistas de reportes.
-- Fase 3 R2: revisar `Admin > Diagnostico`, variables, carpetas y usar `Simular` antes de sincronizar.
-- Fase 4 roles: gestionar permisos en `Admin > Usuarios`.
-- Fase 5 auditoria: consultar `Admin > Reportes > Auditoria reciente`.
-- Fase 6 notificaciones: crear avisos desde `Admin > Avisos`; la campana muestra avisos persistentes por usuario.
-- Fase 7 reportes: abrir `Admin > Reportes`.
-- Fase 8 UX: validar desktop y movil con datos reales.
-- Fase 9 hardening: smoke debe confirmar rutas protegidas.
-- Fase 10 usuarios: seguir `docs/USER_GUIDE.md`.
-
-## Recuperacion
-
-Checkpoint estable:
+3. Desplegar:
 
 ```bash
-git fetch --tags
-git checkout v1.0-r2-workflows
+npx wrangler deploy
 ```
 
-Para trabajar desde ese corte:
+4. Validar produccion:
 
 ```bash
-git switch -c codex/nuevo-arreglo v1.0-r2-workflows
+SMOKE_BASE_URL="https://<worker-url-o-dominio>" npm run smoke
 ```
 
-## Checklist de Cierre
+## Diagnostico
 
-- `npm run build` pasa localmente.
-- El commit esta empujado a `origin`.
-- El deployment correspondiente en Vercel esta `Ready`.
-- Si toca R2/Supabase, smoke pasa contra `https://app.rlead.xyz` o contra el preview con variables completas.
+Endpoints utiles:
+
+```txt
+GET /api/health
+GET /api/auth/session
+GET /api/tasks
+GET /api/materials/library
+GET /api/uploads/destinations
+GET /api/admin/r2/status
+GET /api/reports/operations
+```
+
+`/api/health` debe reportar:
+
+```json
+{
+  "ok": true,
+  "mode": "database",
+  "integrations": {
+    "d1": true,
+    "r2": true
+  }
+}
+```
+
+## Checklist de cierre
+
+- `npm run typecheck` pasa.
+- `npm test` pasa.
+- `npm run lint` no tiene errores.
+- `npm run cf:build` pasa.
+- `npx wrangler deploy --dry-run --outdir dist` muestra bindings `DB` y `MATERIALS_BUCKET`.
+- D1 remota tiene migraciones aplicadas.
+- El perfil owner inicial existe en `app_profiles`.
+- Smoke pasa contra el dominio desplegado cuando se haga deploy real.

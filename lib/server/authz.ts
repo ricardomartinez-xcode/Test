@@ -46,7 +46,7 @@ export async function getCurrentIdentity(request: Request): Promise<AccessIdenti
   const env = await getCloudflareEnv();
 
   if (env.AUTH_MODE === "development") {
-    if (process.env.NODE_ENV === "production") {
+    if (process.env.NODE_ENV === "production" && env.ALLOW_DEV_AUTH !== "1") {
       throw new HttpError(500, "AUTH_MODE development no está permitido en producción.");
     }
     const email = env.DEV_AUTH_EMAIL?.trim().toLowerCase();

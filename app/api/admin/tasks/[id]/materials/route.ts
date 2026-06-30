@@ -1,27 +1,42 @@
 import { NextResponse } from "next/server";
 import { z } from "zod";
-import { createSupabaseServerClient } from "@/lib/supabase/server";
 import { errorResponse, requirePermission } from "@/lib/server/authz";
+import { d1All, d1Run } from "@/lib/server/d1-data";
 
 const materialLinkSchema = z.object({
-  materialId: z.string().uuid(),
+  materialId: z.string().min(1),
 });
 
 type RouteContext = { params: Promise<{ id: string }> };
 
+async function audit(actorId: string, action: string, taskId: string, materialId: string, before: boolean) {
+  await d1Run(
+    `INSERT INTO audit_log (id, actor_id, action, entity, entity_id, before_data, after_data)
+     VALUES (?, ?, ?, 'task_materials', ?, ?, ?)`,
+    [
+      crypto.randomUUID(),
+      actorId,
+      action,
+      `${taskId}:${materialId}`,
+      before ? JSON.stringify({ task_id: taskId, material_id: materialId }) : null,
+      before ? null : JSON.stringify({ task_id: taskId, material_id: materialId }),
+    ],
+  );
+}
+
 export async function GET(request: Request, context: RouteContext) {
   try {
     const { id } = await context.params;
-    const supabase = await createSupabaseServerClient();
     await requirePermission(request, "tasks:edit");
-
-    const { data, error } = await supabase
-      .from("task_materials")
-      .select("materials(id,title,material_type,provider,source_url,preview_url,thumbnail_url,r2_key,file_name,content_type,size_bytes)")
-      .eq("task_id", id);
-
-    if (error) return NextResponse.json({ error: error.message }, { status: 500 });
-    return NextResponse.json({ ok: true, materials: data ?? [] });
+    const rows = await d1All<Record<string, unknown>>(
+      `SELECT m.*
+       FROM task_materials tm
+       JOIN materials m ON m.id = tm.material_id
+       WHERE tm.task_id = ?
+       ORDER BY m.title ASC`,
+      [id],
+    );
+    return NextResponse.json({ ok: true, materials: rows.map((row) => ({ materials: row })) });
   } catch (error) {
     return errorResponse(error);
   }
@@ -30,23 +45,14 @@ export async function GET(request: Request, context: RouteContext) {
 export async function POST(request: Request, context: RouteContext) {
   try {
     const { id } = await context.params;
-    const supabase = await createSupabaseServerClient();
-    await requirePermission(request, "tasks:edit");
+    const profile = await requirePermission(request, "tasks:edit");
     const { materialId } = materialLinkSchema.parse(await request.json());
-
-    const { error } = await supabase
-      .from("task_materials")
-      .upsert({ task_id: id, material_id: materialId }, { onConflict: "task_id,material_id" });
-
-    if (error) return NextResponse.json({ error: error.message }, { status: 500 });
-
-    await supabase.from("audit_log").insert({
-      action: "task.material.link",
-      entity: "task_materials",
-      entity_id: `${id}:${materialId}`,
-      after_data: { task_id: id, material_id: materialId },
-    });
-
+    await d1Run(
+      `INSERT INTO task_materials (task_id, material_id) VALUES (?, ?)
+       ON CONFLICT (task_id, material_id) DO NOTHING`,
+      [id, materialId],
+    );
+    await audit(profile.id, "task.material.link", id, materialId, false);
     return NextResponse.json({ ok: true });
   } catch (error) {
     return errorResponse(error);
@@ -56,25 +62,10 @@ export async function POST(request: Request, context: RouteContext) {
 export async function DELETE(request: Request, context: RouteContext) {
   try {
     const { id } = await context.params;
-    const supabase = await createSupabaseServerClient();
-    await requirePermission(request, "tasks:edit");
+    const profile = await requirePermission(request, "tasks:edit");
     const { materialId } = materialLinkSchema.parse(await request.json());
-
-    const { error } = await supabase
-      .from("task_materials")
-      .delete()
-      .eq("task_id", id)
-      .eq("material_id", materialId);
-
-    if (error) return NextResponse.json({ error: error.message }, { status: 500 });
-
-    await supabase.from("audit_log").insert({
-      action: "task.material.unlink",
-      entity: "task_materials",
-      entity_id: `${id}:${materialId}`,
-      before_data: { task_id: id, material_id: materialId },
-    });
-
+    await d1Run("DELETE FROM task_materials WHERE task_id = ? AND material_id = ?", [id, materialId]);
+    await audit(profile.id, "task.material.unlink", id, materialId, true);
     return NextResponse.json({ ok: true });
   } catch (error) {
     return errorResponse(error);

@@ -1,10 +1,10 @@
 import { NextResponse } from "next/server";
 import { z } from "zod";
 import { errorResponse, requireProfile } from "@/lib/server/authz";
-import { createSupabaseServerClient } from "@/lib/supabase/server";
+import { d1All, d1First, d1Run } from "@/lib/server/d1-data";
 
 const patchSchema = z.object({
-  ids: z.array(z.string().uuid()).min(1),
+  ids: z.array(z.string().min(1)).min(1),
   action: z.enum(["read", "dismiss"]),
 });
 
@@ -12,39 +12,33 @@ const emailPreferenceSchema = z.object({
   emailEnabled: z.boolean(),
 });
 
-const preferenceSelect = "profile_id,in_app_enabled,email_enabled,due_soon_hours,categories";
-
 export async function GET(request: Request) {
   try {
-    const supabase = await createSupabaseServerClient();
     const profile = await requireProfile(request);
     const now = new Date().toISOString();
-
     const [notifications, preferences] = await Promise.all([
-      supabase
-        .from("notifications")
-        .select("id,kind,priority,title,body,entity,entity_id,action_url,scheduled_for,read_at,dismissed_at,created_at")
-        .or(`profile_id.eq.${profile.id},profile_id.is.null`)
-        .is("dismissed_at", null)
-        .lte("scheduled_for", now)
-        .order("scheduled_for", { ascending: false })
-        .limit(80),
-      supabase
-        .from("notification_preferences")
-        .select(preferenceSelect)
-        .eq("profile_id", profile.id)
-        .maybeSingle(),
+      d1All<Record<string, unknown>>(
+        `SELECT id, kind, priority, title, body, entity, entity_id, action_url, scheduled_for, read_at, dismissed_at, created_at
+         FROM notifications
+         WHERE (profile_id = ? OR profile_id IS NULL)
+           AND dismissed_at IS NULL
+           AND scheduled_for <= ?
+         ORDER BY scheduled_for DESC
+         LIMIT 80`,
+        [profile.id, now],
+      ),
+      d1First<Record<string, unknown>>(
+        "SELECT profile_id, in_app_enabled, email_enabled, due_soon_hours, categories FROM notification_preferences WHERE profile_id = ? LIMIT 1",
+        [profile.id],
+      ),
     ]);
-
-    if (notifications.error) throw new Error(notifications.error.message);
-    if (preferences.error) throw new Error(preferences.error.message);
 
     return NextResponse.json({
       ok: true,
       profileId: profile.id,
-      notifications: notifications.data ?? [],
-      unread: (notifications.data ?? []).filter((notification) => !notification.read_at).length,
-      preferences: preferences.data ?? null,
+      notifications,
+      unread: notifications.filter((notification) => !notification.read_at).length,
+      preferences: preferences ?? null,
     }, {
       headers: { "Cache-Control": "no-store" },
     });
@@ -55,19 +49,21 @@ export async function GET(request: Request) {
 
 export async function PATCH(request: Request) {
   try {
-    const supabase = await createSupabaseServerClient();
-    await requireProfile(request);
+    const profile = await requireProfile(request);
     const body = patchSchema.parse(await request.json());
-    const patch = body.action === "read"
-      ? { read_at: new Date().toISOString() }
-      : { dismissed_at: new Date().toISOString(), read_at: new Date().toISOString() };
-
-    const { error } = await supabase
-      .from("notifications")
-      .update(patch)
-      .in("id", body.ids);
-
-    if (error) throw new Error(error.message);
+    const placeholders = body.ids.map(() => "?").join(",");
+    const now = new Date().toISOString();
+    if (body.action === "read") {
+      await d1Run(
+        `UPDATE notifications SET read_at = COALESCE(read_at, ?) WHERE id IN (${placeholders}) AND (profile_id = ? OR profile_id IS NULL)`,
+        [now, ...body.ids, profile.id],
+      );
+    } else {
+      await d1Run(
+        `UPDATE notifications SET dismissed_at = ?, read_at = COALESCE(read_at, ?) WHERE id IN (${placeholders}) AND (profile_id = ? OR profile_id IS NULL)`,
+        [now, now, ...body.ids, profile.id],
+      );
+    }
     return NextResponse.json({ ok: true });
   } catch (error) {
     return errorResponse(error);
@@ -76,25 +72,20 @@ export async function PATCH(request: Request) {
 
 export async function PUT(request: Request) {
   try {
-    const supabase = await createSupabaseServerClient();
     const profile = await requireProfile(request);
     const body = emailPreferenceSchema.parse(await request.json());
-
-    const { data, error } = await supabase
-      .from("notification_preferences")
-      .upsert(
-        {
-          profile_id: profile.id,
-          email_enabled: body.emailEnabled,
-          updated_at: new Date().toISOString(),
-        },
-        { onConflict: "profile_id" },
-      )
-      .select(preferenceSelect)
-      .single();
-
-    if (error) throw new Error(error.message);
-    return NextResponse.json({ ok: true, preferences: data });
+    const now = new Date().toISOString();
+    await d1Run(
+      `INSERT INTO notification_preferences (profile_id, email_enabled, updated_at)
+       VALUES (?, ?, ?)
+       ON CONFLICT (profile_id) DO UPDATE SET email_enabled = excluded.email_enabled, updated_at = excluded.updated_at`,
+      [profile.id, body.emailEnabled ? 1 : 0, now],
+    );
+    const preferences = await d1First<Record<string, unknown>>(
+      "SELECT profile_id, in_app_enabled, email_enabled, due_soon_hours, categories FROM notification_preferences WHERE profile_id = ? LIMIT 1",
+      [profile.id],
+    );
+    return NextResponse.json({ ok: true, preferences });
   } catch (error) {
     return errorResponse(error);
   }

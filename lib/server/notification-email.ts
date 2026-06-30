@@ -1,4 +1,4 @@
-import { createClient } from "@supabase/supabase-js";
+import { d1All } from "@/lib/server/d1-data";
 
 export type AnnouncementNotification = {
   id: string;
@@ -14,12 +14,12 @@ type RecipientProfile = {
   id: string;
   email: string;
   full_name: string | null;
-  active: boolean;
+  active: number;
 };
 
 type NotificationPreference = {
   profile_id: string;
-  email_enabled: boolean;
+  email_enabled: number;
   categories: unknown;
 };
 
@@ -33,14 +33,12 @@ export type EmailDispatchResult = {
 };
 
 function getDeliveryConfig() {
-  const url = process.env.NEXT_PUBLIC_SUPABASE_URL;
-  const serviceRoleKey = process.env.SUPABASE_SERVICE_ROLE_KEY;
   const resendApiKey = process.env.RESEND_API_KEY;
   const from = process.env.EMAIL_FROM;
   const appUrl = process.env.NEXT_PUBLIC_APP_URL?.replace(/\/$/, "") || "http://localhost:3000";
 
-  if (!url || !serviceRoleKey || !resendApiKey || !from) return null;
-  return { url, serviceRoleKey, resendApiKey, from, appUrl };
+  if (!resendApiKey || !from) return null;
+  return { resendApiKey, from, appUrl };
 }
 
 function categoryAllowsEmail(categories: unknown, kind: string) {
@@ -114,31 +112,28 @@ export async function deliverAnnouncementEmails(notifications: AnnouncementNotif
   }
 
   result.configured = true;
-  const service = createClient(config.url, config.serviceRoleKey, {
-    auth: { autoRefreshToken: false, persistSession: false },
-  });
-
-  const [profilesResponse, preferencesResponse] = await Promise.all([
-    service
-      .from("app_profiles")
-      .select("id,email,full_name,active")
-      .in("id", profileIds)
-      .eq("active", true),
-    service
-      .from("notification_preferences")
-      .select("profile_id,email_enabled,categories")
-      .in("profile_id", profileIds)
-      .eq("email_enabled", true),
-  ]);
-
-  if (profilesResponse.error || preferencesResponse.error) {
+  const placeholders = profileIds.map(() => "?").join(",");
+  let profilesResponse: RecipientProfile[] = [];
+  let preferencesResponse: NotificationPreference[] = [];
+  try {
+    [profilesResponse, preferencesResponse] = await Promise.all([
+      d1All<RecipientProfile>(
+        `SELECT id, email, full_name, active FROM app_profiles WHERE active = 1 AND id IN (${placeholders})`,
+        profileIds,
+      ),
+      d1All<NotificationPreference>(
+        `SELECT profile_id, email_enabled, categories FROM notification_preferences WHERE email_enabled = 1 AND profile_id IN (${placeholders})`,
+        profileIds,
+      ),
+    ]);
+  } catch (error) {
     result.failed = notifications.length;
-    result.errors.push(profilesResponse.error?.message ?? preferencesResponse.error?.message ?? "No se pudieron preparar los destinatarios.");
+    result.errors.push(error instanceof Error ? error.message : "No se pudieron preparar los destinatarios.");
     return result;
   }
 
-  const profiles = new Map((profilesResponse.data ?? []).map((profile) => [profile.id, profile as RecipientProfile]));
-  const preferences = new Map((preferencesResponse.data ?? []).map((preference) => [preference.profile_id, preference as NotificationPreference]));
+  const profiles = new Map(profilesResponse.map((profile) => [profile.id, profile]));
+  const preferences = new Map(preferencesResponse.map((preference) => [preference.profile_id, preference]));
   const deliveries = notifications.flatMap((notification) => {
     if (!notification.profile_id) return [];
     const recipient = profiles.get(notification.profile_id);

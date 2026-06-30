@@ -1,12 +1,12 @@
 import { NextResponse } from "next/server";
 import { z } from "zod";
 import { errorResponse, requirePermission } from "@/lib/server/authz";
-import { createSupabaseServerClient } from "@/lib/supabase/server";
+import { executeDataQuery } from "@/lib/server/d1-data";
 
 const taskCreateSchema = z.object({
   title: z.string().trim().min(1),
-  course_id: z.string().uuid().nullable(),
-  task_type_id: z.string().uuid().nullable(),
+  course_id: z.string().nullable(),
+  task_type_id: z.string().nullable(),
   due_date: z.string().min(1),
   due_time: z.string().min(1),
   status: z.string().min(1),
@@ -20,22 +20,20 @@ const taskCreateSchema = z.object({
 
 export async function POST(request: Request) {
   try {
-    const supabase = await createSupabaseServerClient();
     const profile = await requirePermission(request, "tasks:edit");
     const input = taskCreateSchema.parse(await request.json());
-
-    const { data, error } = await supabase
-      .from("tasks")
-      .insert({
+    const result = await executeDataQuery(request, {
+      table: "tasks",
+      action: "insert",
+      values: {
         ...input,
         created_by: profile.id,
         updated_by: profile.id,
-      })
-      .select("id")
-      .single();
-    if (error) return NextResponse.json({ error: error.message }, { status: 500 });
-
-    return NextResponse.json({ ok: true, task: data });
+      },
+      single: true,
+    });
+    if (result.error) throw new Error(result.error.message);
+    return NextResponse.json({ ok: true, task: result.data });
   } catch (error) {
     return errorResponse(error);
   }
