@@ -8,7 +8,7 @@
   "preview_urls": false,
   "routes": [
     {
-      "pattern": "pscv-room.rlead.xyz",
+      "pattern": "app.rlead.xyz",
       "custom_domain": true
     }
   ],
