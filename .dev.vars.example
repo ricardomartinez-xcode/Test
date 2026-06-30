@@ -3,8 +3,11 @@ AUTH_MODE="development"
 DEV_AUTH_EMAIL="admin@example.com"
 
 # Se requieren en staging/producción con Cloudflare Access.
+# Keycloak se configura como proveedor OIDC dentro de Cloudflare Zero Trust;
+# el Worker no recibe ni guarda su client secret.
 ACCESS_TEAM_DOMAIN="your-team.cloudflareaccess.com"
 ACCESS_AUD="replace-with-access-application-aud"
+AUTH_IDENTITY_PROVIDER="keycloak"
 
 # Opcionales: notificaciones y URLs públicas de recursos no sensibles.
 RESEND_API_KEY=""
